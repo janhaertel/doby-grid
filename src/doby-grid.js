@@ -753,7 +753,7 @@
 				resizeCanvas(true);
 
 				// Fit column widths to header contents
-				if (self.options.fitColumnsToHeader) fitColumnsToHeader();
+				if (self.options.fitColumnsToHeader) fitColumnsToHeader(true);
 
 				// If we're using remote data, start by fetching the data set length
 				if (this.fetcher) {
@@ -4506,7 +4506,7 @@
 		//
 		// @param	column	object	Column Object
 		//
-		fitColumnsToHeader = function () {
+		fitColumnsToHeader = function (silent) {
 
 			if (!initialized) return;
 
@@ -4515,7 +4515,7 @@
 			}
 
 			applyHeaderAndColumnWidths();
-			submitColResize();
+			submitColResize(silent);
 		};
 
 
@@ -10090,7 +10090,7 @@
 		};
 
 
-		submitColResize = function () {
+		submitColResize = function (silent) {
 			var newWidth, j, c;
 			var columnElements = $headers.children('.' + classheadercolumn);
 			for (j = 0; j < columnElements.length; j++) {
@@ -10104,9 +10104,13 @@
 
 			updateCanvasWidth(true);
 			render();
-			self.trigger('columnresize', self._event, {
-				columns: self.options.columns
-			});
+
+			if (!silent) {
+				self.trigger('columnresize', self._event, {
+					columns: self.options.columns
+				});
+			}
+
 			self.trigger('statechange', self._event);
 		};
 
