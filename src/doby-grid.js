@@ -6143,7 +6143,7 @@
 						deselectCells();
 						self.selectRows(cell.row, cell.row, true);
 					}
-					console.log(self.selection);
+
 					clearTextSelection();
 
 				} else {
