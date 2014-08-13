@@ -3229,7 +3229,8 @@ describe("Grid Options", function () {
 
 		it("should select rows when when using keyboard navigation with rowBasedSelection enabled", function () {
 			// Prepare for test
-			var grid = resetGrid(defaultData(), $.extend(defaultConfig, {
+
+			var grid = resetGrid($.extend(defaultData(), {
 				rowBasedSelection: true,
 				selectOnNavigate: true
 			}));
@@ -3258,7 +3259,6 @@ describe("Grid Options", function () {
 			expect(grid.selection[0].exclusions.length).toEqual(0);
 		});
 	});
-
 
 
 	// ==========================================================================================
