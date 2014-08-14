@@ -431,7 +431,6 @@
 			editorType:				"selection",
 			emptyNotice:			true,
 			exportFileName:			"doby-grid-export",
-			fitColumnsToHeader:		false,
 			formatter:				null,
 			fullWidthRows:			true,
 			groupable:				true,
@@ -441,6 +440,7 @@
 			lineHeightOffset:		-1,
 			nestedAggregators:		true,
 			menuExtensions:			null,
+			minColumnWidth:			"",
 			multiColumnSort:		true,
 			quickFilter:			false,
 			remoteScrollTime:		200,
@@ -756,7 +756,7 @@
 				resizeCanvas(true);
 
 				// Fit column widths to header contents
-				if (self.options.fitColumnsToHeader) fitColumnsToHeader(true);
+				if (self.options.minColumnWidth === "headerContent") fitColumnsToHeader(true);
 
 				// If we're using remote data, start by fetching the data set length
 				if (this.fetcher) {
@@ -965,7 +965,12 @@
 			}
 		};
 
-
+		/**
+		* Sets the widths of column headers and columns to what they should be
+		* @method applyHeaderAndColumnWidths
+		* @memberof DobyGrid
+		* @private
+		*/
 		applyHeaderAndColumnWidths = function () {
 			applyColumnHeaderWidths();
 			if (self.options.resizeCells) applyColumnWidths();
@@ -4482,14 +4487,12 @@
 
 			var currentWidth = column.width,
 				column_index = cache.columnsById[column.id],
-				headerWidth,
-				newWidth,
+				headerWidth = getColumnHeaderWidth(column_index),
+				newWidth = Math.max(column.width, headerWidth),
+				newMinWidth = Math.max(column.initMinWidth, headerWidth),
 				columnRightPosition;
 
-			headerWidth = getColumnHeaderWidth(column_index);
-			newWidth = Math.max(column.width, headerWidth);
-
-			column.minWidth = Math.max(column.minWidth, headerWidth);
+			column.minWidth = newMinWidth;
 
 			if (currentWidth == newWidth) return;
 
@@ -4964,6 +4967,7 @@
 
 			var cellWidths = [];
 
+			// Determine the width of the column name text
 			cellWidths.push(getColumnHeaderWidth(column_index));
 
 			// Loop through the visible row nodes
@@ -5000,18 +5004,21 @@
 			return Math.max.apply(null, cellWidths);
 		};
 
-		// getColumnHeaderWidth()
-		// Returns the width of the content in the given column header.
-		//
-		// Ignores Group rows.
-		//
-		// @param	column_index	integer		Index of the column to calculate data for
-		//
-		// @return integer
+		/**
+		 * Returns the width of the content in the given column header. Ignores Group rows.
+		 * @method getColumnHeaderWidth
+		 * @memberof DobyGrid
+		 * @private
+		 *
+		 * @param	{integer}	column_index		- Index of the column to calculate data for
+		 *
+		 * @returns {integer}	headerWidth			- The With of the columns header
+		 */
 		getColumnHeaderWidth = function (column_index) {
 			if (!self.options.showHeader) return;
 
 			var columnElements = $headers.children(),
+				column = cache.activeColumns[column_index],
 				$column = $(columnElements[column_index]),
 				currentWidth = $column.width(),
 				headerPadding = parseInt($column.css('paddingLeft'), 10) + parseInt($column.css('paddingRight'), 10);
@@ -5023,6 +5030,12 @@
 			// The extra 1 is needed here because text-overflow: ellipsis
 			// seems to kick in 1 pixel too early.
 			var headerWidth = $column.width() + headerPadding + 1;
+
+			if (hasSorting(column.id)) {
+				var $indicator = $column.find("." + classsortindicator);
+				headerWidth += $indicator.width();
+			}
+
 			name.css('overflow', '');
 			$column.width(currentWidth);
 
@@ -7077,6 +7090,12 @@
 			}), 10);
 		};
 
+		/**
+		 * Remembers the current width of each column header in the .previousWidth property
+		 * @method lockColumnWidths
+		 * @memberof DobyGrid
+		 * @private
+		 */
 		lockColumnWidths = function () {
 			// Columns may have been changed since the last time this ran - refetch children
 			var columnElements = $headers.children('.' + classheadercolumn);
@@ -7393,7 +7412,15 @@
 		Placeholder.prototype.__placeholder = true;
 		Placeholder.prototype.toString = function () { return "Placeholder"; };
 
-
+		/**
+		 * Handles the width leeway for the column headers
+		 * @method prepareLeeway
+		 * @memberof DobyGrid
+		 * @private
+		 *
+		 * @param	{integer}	i		- The columns index
+		 * @param   {integer}	pageX	- The x coordinate of the right edge of the column
+		 */
 		prepareLeeway = function (i, pageX) {
 
 			var columnElements = $headers.children('.' + classheadercolumn);
@@ -8804,6 +8831,15 @@
 		};
 
 
+		/**
+		 * Given a column's index and width delta, changes the width of the column
+		 * @method resizeColumn
+		 * @memberof DobyGrid
+		 * @private
+		 *
+		 * @param	{integer}	i		- The columns index
+		 * @param   {integer}	d		- The delta by which to change the column width
+		 */
 		resizeColumn = function (i, d) {
 			var actualMinWidth, x, j, c, l;
 			var columnElements = $headers.children('.' + classheadercolumn);
@@ -9383,7 +9419,7 @@
 				resizeCanvas(true);
 				applyColumnWidths();
 				handleScroll();
-				self.options.fitColumnsToHeader && fitColumnsToHeader(true);
+				self.options.minColumnWidth === "headerContent" && fitColumnsToHeader(true);
 			}
 		};
 
@@ -9619,6 +9655,9 @@
 				});
 
 				self.trigger('statechange', this._event);
+
+				// when sorting changed, make sure to recalculate min header with if applicable
+				self.options.minColumnWidth === "headerContent" && fitColumnsToHeader();
 			}
 
 			return this;
@@ -10306,7 +10345,14 @@
 			});
 		};
 
-
+		/**
+		 * Submits the column resize states and calls associated events
+		 * @method submitColResize
+		 * @memberof DobyGrid
+		 * @private
+		 *
+		 * @param	{boolean}	silent	- Submit column resize states but don't trigger associated events
+		 */
 		submitColResize = function (silent) {
 			var newWidth, j, c;
 			var columnElements = $headers.children('.' + classheadercolumn);
@@ -11069,6 +11115,11 @@
 				// If min/max width is set -- use it to reset given width
 				if (c.minWidth !== undefined && c.minWidth !== null && c.width < c.minWidth) c.width = c.minWidth;
 				if (c.maxWidth !== undefined && c.maxWidth !== null && c.width > c.maxWidth) c.width = c.maxWidth;
+
+				// Store the initial minWidth set by the user
+				// TODO: maybe not the right place to do this, and maybe it would be good to generally have access to
+				// all the original unmodified options set by the user.
+				c.initMinWidth = c.minWidth;
 
 				// These params must be functions
 				var fn_attrs = ['editor', 'exporter', 'formatter'], attr;
