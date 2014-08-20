@@ -752,7 +752,6 @@
 				measureCellPadding();
 				if (this.options.showHeader) disableSelection($headers);
 				renderColumnHeaders();
-				setupColumnSort();
 				createCssRules();
 				cacheRows();
 				resizeCanvas(true);
@@ -814,6 +813,8 @@
 					.on("click", handleClick)
 					.on("dblclick", handleDblClick)
 					.on("contextmenu", handleContextMenu);
+
+				setupColumnSort();
 
 				// Pass through common mouseevents
 				var evs = [
