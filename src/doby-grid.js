@@ -9905,7 +9905,7 @@
 		setupColumnSort = function () {
 			if (!self.options.showHeader) return;
 
-			$headers.click(function (e) {
+			$headerScroller.click(function (e) {
 				self._event = e;
 
 				// If clicking on drag handle - stop
