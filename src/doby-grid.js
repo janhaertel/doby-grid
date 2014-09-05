@@ -4494,13 +4494,12 @@
 			if (!initialized) return;
 
 			var currentWidth = column.width,
-				column_index = cache.columnsById[column.id],
-				headerWidth = getColumnHeaderWidth(column_index),
-				newWidth = Math.max(column.width, headerWidth),
-				newMinWidth = Math.max(column.initMinWidth, headerWidth),
-				columnRightPosition;
+				column_index = cache.columnsById[column.id];
 
-			column.minWidth = newMinWidth;
+			column._headerWidth = getColumnHeaderWidth(column_index);
+
+			var newWidth = Math.max(column.width, column._headerWidth),
+				columnRightPosition;
 
 			if (currentWidth == newWidth) return;
 
@@ -7419,6 +7418,7 @@
 		Placeholder.prototype.__placeholder = true;
 		Placeholder.prototype.toString = function () { return "Placeholder"; };
 
+
 		/**
 		 * Handles the width leeway for the column headers
 		 * @method prepareLeeway
@@ -8884,14 +8884,16 @@
 		 * @param   {integer}	d		- The delta by which to change the column width
 		 */
 		resizeColumn = function (i, d) {
-			var actualMinWidth, x, j, c, l;
+			var actualMinWidth, headerContentWidth, x, j, c, l;
 			var columnElements = $headers.children('.' + classheadercolumn);
 			x = d;
 			if (d < 0) { // shrink column
 				for (j = i; j >= 0; j--) {
 					c = cache.activeColumns[j];
+					headerContentWidth = self.options.minColumnWidth === 'headerContent' ? c._headerWidth : 0;
 					if (!c.resizable) continue;
-					actualMinWidth = Math.max(c.minWidth || 0, absoluteColumnMinWidth);
+					actualMinWidth = Math.max(c.minWidth || 0, absoluteColumnMinWidth, headerContentWidth);
+
 					if (x && c.previousWidth + x < actualMinWidth) {
 						x += c.previousWidth - actualMinWidth;
 						c.width = actualMinWidth;
@@ -9879,7 +9881,6 @@
 						prepareLeeway(i, pageX);
 					})
 					.on('drag', function (event) {
-
 						var delta = Math.min(maxPageX, Math.max(minPageX, event.pageX)) - pageX;
 
 						// Sets the new column widths
@@ -9889,7 +9890,14 @@
 						applyHeaderAndColumnWidths();
 					})
 					.on('dragend', function () {
-						$(this).parent().removeClass(classheadercolumndrag);
+
+						// This timeout is a hacky solution to prevent the 'click' event for
+						// column sorting from firing when resizing the handle on top of the
+						// header cell. FIXME: There's got to be a better way!
+						setTimeout(function () {
+							$(this).parent().removeClass(classheadercolumndrag);
+						}.bind(this), 1);
+
 						submitColResize();
 					});
 			});
@@ -9909,8 +9917,8 @@
 				self._event = e;
 
 				// If clicking on drag handle - stop
-				var handle = $(e.target).closest("." + classhandle);
-				if (handle.length) return;
+				var preventClick = $(e.target).closest("." + classhandle).length || $(e.target).hasClass(classheadercolumndrag);
+				if (preventClick) return;
 
 				var column = getColumnFromEvent(e);
 				if (!column || !column.sortable) return;
@@ -11163,11 +11171,6 @@
 				// If min/max width is set -- use it to reset given width
 				if (c.minWidth !== undefined && c.minWidth !== null && c.width < c.minWidth) c.width = c.minWidth;
 				if (c.maxWidth !== undefined && c.maxWidth !== null && c.width > c.maxWidth) c.width = c.maxWidth;
-
-				// Store the initial minWidth set by the user
-				// TODO: maybe not the right place to do this, and maybe it would be good to generally have access to
-				// all the original unmodified options set by the user.
-				c.initMinWidth = c.minWidth;
 
 				// These params must be functions
 				var fn_attrs = ['editor', 'exporter', 'formatter'], attr;
