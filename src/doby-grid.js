@@ -2659,7 +2659,12 @@
 				}
 
 				var result = cache.modelsById[id];
-				return result ? [this.items.indexOf(result), result] : null;
+				var idx = this.items.indexOf(result);
+				if (result && idx < 0) {
+					result = null;
+					delete cache.modelsById[id];
+				}
+				return result ? [idx, result] : null;
 			};
 
 
@@ -5363,7 +5368,7 @@
 		 *
 		 * @return {object}
 		 */
-		getRenderedRange = function (viewportTop, viewportLeft) {
+		getRenderedRange = this.getRenderedRange = function (viewportTop, viewportLeft) {
 			var range = getVisibleRange(viewportTop, viewportLeft),
 				buffer,
 				minBuffer = 3;
@@ -5682,7 +5687,7 @@
 		 *
 		 * @returns {object}
 		 */
-		getVisibleRange = function (viewportTop, viewportLeft) {
+		getVisibleRange = this.getVisibleRange = function (viewportTop, viewportLeft) {
 			if (viewportTop === undefined || viewportTop === null) viewportTop = scrollTop;
 			if (viewportLeft === undefined || viewportLeft === null) viewportLeft = scrollLeft;
 
@@ -7042,6 +7047,7 @@
 		// up common Collection events to the grid.
 		//
 		bindToCollection = function () {
+			self.stopListening(self.options.data);
 			self.listenTo(self.options.data, 'add', function (model, collection, options) {
 				// If grid is destroyed by the time we get here - leave
 				if (self.destroyed) return;
