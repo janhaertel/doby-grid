@@ -839,7 +839,7 @@
 
 					// Focus on the canvas when the mouse is in it.
 					// Only as long as the Quick Filter isn't focused.
-					if (event.type == 'mouseenter' && self.options.canvasFocus) {
+					if (event.type == 'mouseup' && self.options.canvasFocus) {
 						var ae = document.activeElement;
 						if (ae != this && !$(this).has($(ae)).length && (
 							(self.options.quickFilter && !$(ae).closest('.' + classheaderfiltercell).length) ||
