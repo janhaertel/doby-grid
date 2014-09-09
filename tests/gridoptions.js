@@ -2235,8 +2235,11 @@ describe("Grid Options", function () {
 				// The _headerWidth property should get set for all columns
 				expect(typeof(c._headerWidth)).toEqual('number');
 
-				// The width of the column should be in the 250px range based on the text above
-				expect(c.width).toBeGreaterThan(250);
+				// The width of the column should be in this range based on the text above.
+				// Fonts on Windows and Mac are slightly different, so this can't be pixel
+				// perfect test.
+				expect(c.width).toBeGreaterThan(247);
+				expect(c.width).toBeLessThan(308);
 			});
 		});
 
@@ -2277,8 +2280,11 @@ describe("Grid Options", function () {
 				// The _headerWidth property should get set for all columns
 				expect(typeof(c._headerWidth)).toEqual('number');
 
-				// The width of the column should be in the 250px range based on the text above
-				expect(c.width).toBeGreaterThan(250);
+				// The width of the column should be in this range based on the text above.
+				// Fonts on Windows and Mac are slightly different, so this can't be pixel
+				// perfect test.
+				expect(c.width).toBeGreaterThan(247);
+				expect(c.width).toBeLessThan(308);
 
 				// The column DOM should match the widths too
 				expect($columns.eq(i).outerWidth()).toEqual(c.width);
