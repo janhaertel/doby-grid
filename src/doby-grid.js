@@ -2659,12 +2659,7 @@
 				}
 
 				var result = cache.modelsById[id];
-				var idx = this.items.indexOf(result);
-				if (result && idx < 0) {
-					result = null;
-					delete cache.modelsById[id];
-				}
-				return result ? [idx, result] : null;
+				return result ? [this.items.indexOf(result), result] : null;
 			};
 
 
