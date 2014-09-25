@@ -2938,6 +2938,69 @@ describe("Methods and Data Manipulation", function () {
 			expect(ensureHeightGroup).toEqual(true);
 			expect(ensureRowSpacingGroup).toEqual(true);
 		});
+
+
+		// ==========================================================================================
+
+
+		it("should allow you to remove the colspan for group rows", function () {
+			// Prepare for test
+			var grid = resetGrid({
+				columns: [
+					{name: 'ID', field: 'id', id: 'id'},
+					{name: 'Name', field: 'name', id: 'name'}
+				],
+				data: [
+					{data: {id: 189, name: 'test'}, id: 189},
+					{data: {id: 289, name: null}, id: 289}
+				]
+			});
+
+			grid.addGrouping('id', {
+				colspan: false
+			});
+
+			// Ensure group rows have 2 cells
+			grid.$el.find('.doby-grid-group').each(function () {
+				expect($(this).children('.doby-grid-cell').length).toEqual(2);
+			});
+		});
+
+
+		// ==========================================================================================
+
+
+		it("should allow you to specify a custom dataExtractor for group rows", function () {
+			// Prepare for test
+			var grid = resetGrid({
+				columns: [
+					{name: 'ID', field: 'id', id: 'id'},
+					{name: 'Name', field: 'name', id: 'name'}
+				],
+				data: [
+					{data: {id: 189, name: 'test'}, id: 189},
+					{data: {id: 289, name: null}, id: 289}
+				]
+			});
+
+			grid.addGrouping('id', {
+				colspan: false,
+				dataExtractor: function (item, columnDef) {
+					return columnDef.id;
+				}
+			});
+
+			// Ensure group rows have correct values in the cells
+			grid.$el.find('.doby-grid-group').each(function () {
+				$(this).children('.doby-grid-cell').each(function (i) {
+					if (i % 2) {
+						expect($(this)).toHaveText('name');
+					} else {
+						expect($(this)).toHaveText('id');
+					}
+				});
+			});
+		});
 	});
 
 
@@ -3168,6 +3231,60 @@ describe("Methods and Data Manipulation", function () {
 			// Should clear the canvas and show the custom overlay
 			var $viewport = grid.$el.find('.doby-grid-canvas');
 			expect($viewport.html()).toEqual('<div class="doby-grid-overlay">Hi There</div>');
+		});
+	});
+
+
+	// ==========================================================================================
+
+
+	describe("showQuickFilter()", function () {
+		it("should show the Quick Filter bar", function () {
+			var grid = resetGrid({
+				columns: [
+					{id: 'id', field: 'id'},
+					{id: 'name', field: 'name'}
+				],
+				data: [
+					{id: 1, data: {id: 1, name: 'one'}},
+					{id: 2, data: {id: 2, name: 'two'}}
+				]
+			});
+
+			// Execute
+			grid.showQuickFilter('id');
+
+			// Should clear the canvas and show the custom overlay
+			expect(grid.$el).toContainElement('.doby-grid-header-filter');
+		});
+
+
+		// ==========================================================================================
+
+
+		it("should hide the Quick Filter bar when 'column_id' is null", function () {
+			var grid = resetGrid({
+				columns: [
+					{id: 'id', field: 'id'},
+					{id: 'name', field: 'name'}
+				],
+				data: [
+					{id: 1, data: {id: 1, name: 'one'}},
+					{id: 2, data: {id: 2, name: 'two'}}
+				]
+			});
+
+			// Show
+			grid.showQuickFilter('id');
+
+			// Ensure the quick filter is shown
+			expect(grid.$el).toContainElement('.doby-grid-header-filter');
+
+			// Hide
+			grid.showQuickFilter();
+
+			// Ensure the quick filter is removed
+			expect(grid.$el).not.toContainElement('.doby-grid-header-filter');
 		});
 	});
 
