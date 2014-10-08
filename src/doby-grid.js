@@ -6490,7 +6490,7 @@
 			var reselectRow = function (up) {
 				if (! self.options.selectOnNavigate) return;
 				var row = self.active && self.active.row;
-				if (typeof row !== "undefined") {
+				if (row !== null && typeof row !== "undefined") {
 					deselectCells();
 					if (shiftUsed && newestRange) {
 						if (row < newestRange.fromRow) {
