@@ -459,6 +459,7 @@
 			selectOnNavigate:		false,
 			shiftSelect:			true,
 			showHeader:				true,
+			showSortIndicator:		true,
 			stickyFocus:			false,
 			stickyGroupRows:		false,
 			tooltipType:			"popup",
@@ -8567,7 +8568,7 @@
 				html.push('>');
 				html.push('<span class="' + classcolumnname + '">' + column.name + '</span>');
 
-				if (column.sortable) {
+				if (column.sortable && self.options.showSortIndicator) {
 					html.push('<span class="' + classsortindicator + '"></span>');
 				}
 
@@ -10411,7 +10412,7 @@
 		 * @private
 		 */
 		styleSortColumns = function () {
-			if (!self.options.showHeader) return;
+			if (!self.options.showHeader || !self.options.showSortIndicator) return;
 
 			var headerColumnEls = $headers.children();
 			headerColumnEls
