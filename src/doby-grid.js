@@ -6158,11 +6158,11 @@ var DobyGrid = function (options) {
 			$overlay = null;
 
 			// Reset canvas width
-			updateCanvasWidth();
-
-			// Redraw grid
-			invalidate();
+			//updateCanvasWidth();
 		}
+
+		// Redraw grid
+		invalidate();
 
 		return this;
 	};
@@ -9071,6 +9071,7 @@ var DobyGrid = function (options) {
 		// First, clear the viewport
 		invalidateAllRows();
 
+		/*
 		// Scroll all the way up and remove scrollbars
 		if ($canvas) {
 			h = null;			// Resets the current canvas height cache
@@ -9078,7 +9079,7 @@ var DobyGrid = function (options) {
 
 			$canvas.height('100%').width('100%');
 			scrollTo(0);
-		}
+		}*/
 
 		// Create an overlay
 		if ($overlay && $overlay.length) removeElement($overlay[0]);
