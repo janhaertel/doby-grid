@@ -6821,7 +6821,7 @@ var DobyGrid = function (options) {
 
 		var req = function () {
 			var	dfd = new $.Deferred();
-			
+
 			if (!self.fetcher.count) {
 				if (self.options.paginationStyle !== "infinite") {
 					throw new Error("You must either specify a valid count() method in your fetcher or use a different pagination style. (see grid.options.paginationStyle)");
@@ -7014,8 +7014,8 @@ var DobyGrid = function (options) {
 				remoteLoaded(null, null, {silent: silentRemoteLoaded});
 				return dfd.resolve().promise();
 			}
-			
-                        var oldvariableRowHeight;
+
+			var oldvariableRowHeight;
 			newLimit = newTo - newFrom + 1;
 
 			if (self.options.paginationStyle === "infinite") {
