@@ -4,9 +4,19 @@
 // For all details and documentation:
 // https://github.com/globexdesigns/doby-grid
 
-/*global $, _, Backbone, console, saveAs*/
+/*global $:true, jQuery, _, Backbone, console, saveAs*/
 
 "use strict";
+
+
+// Support for jQuery.noConflict
+if (!$ && jQuery) $ = jQuery;
+
+// Check for required dependencies
+if (!$) throw new Error('Unable to load DobyGrid because jQuery, which is a required dependency, could not be found.');
+if (!_) throw new Error('Unable to load DobyGrid because Underscore, which is a required dependency, could not be found.');
+if (!Backbone) throw new Error('Unable to load DobyGrid because Backbone, which is a required dependency, could not be found.');
+
 
 var Aggregate			= require('./classes/Aggregate'),
 	CellRangeDecorator	= require('./classes/CellRangeDecorator'),
@@ -38,7 +48,7 @@ var DobyGrid = function (options) {
 	this.NAME = 'doby-grid';
 
 	// Current version of the library
-	this.VERSION = '0.0.8';
+	this.VERSION = '0.1.0';
 
 	// Ensure options are an object
 	if (typeof options !== "object" || $.isArray(options)) {
@@ -224,6 +234,7 @@ var DobyGrid = function (options) {
 		resetAggregators,
 		resizeCanvas,
 		resizeColumn,
+		resizeColumnsToContent,
 		resizeContainer,
 		scrollCellIntoView,
 		scrollLeft = 0,
@@ -347,6 +358,7 @@ var DobyGrid = function (options) {
 		emptyNotice:			true,
 		exportFileName:			"doby-grid-export",
 		fetchCollapsed:			false,
+		forceRemoteSort:		false,
 		formatter:				null,
 		fullWidthRows:			true,
 		groupable:				true,
@@ -1945,7 +1957,7 @@ var DobyGrid = function (options) {
 
 				// For remote models, check if we're inserting 'at' an index with place holders
 				if (grid.fetcher && at !== undefined) {
-						if (this.items[at + i] && this.items[at + i].__placeholder) {
+					if (this.items[at + i] && this.items[at + i].__placeholder) {
 						existing = this.items[at + i];
 					}
 				}
@@ -3529,7 +3541,7 @@ var DobyGrid = function (options) {
 		var cols = args.sortCols;
 
 		// If remote, and not all data is fetched - sort on server
-		if (self.fetcher && !remoteAllLoaded()) {
+		if (self.fetcher && (!remoteAllLoaded() || self.options.forceRemoteSort)) {
 			// Reset collection length to full. This ensures that when groupings are removed,
 			// the grid correctly refetches the full page of results.
 			self.collection.length = self.collection.remote_length;
@@ -5537,6 +5549,7 @@ var DobyGrid = function (options) {
 			setActiveCellInternal(getCellNode(cell.row, cell.cell));
 		}
 	};
+
 
 
 	/**
@@ -8032,6 +8045,41 @@ var DobyGrid = function (options) {
 		}
 	};
 
+	resizeColumnToContent = function (column) {
+		if (!column) return;
+		var column_index = cache.columnsById[column.id],
+			// Either use the width of the column's content or the min column width
+			currentWidth = column.width,
+			newWidth = Math.max(getColumnContentWidth(column_index), column.minWidth);
+
+		// Do nothing if width isn't changed
+		if (currentWidth == newWidth) return;
+
+		var pageX = event.pageX;
+
+		lockColumnWidths(column_index);
+
+		// Calculate resize diff
+		var diff = newWidth - currentWidth;
+
+		// Duplicate the drag functionality
+		prepareLeeway(column_index, pageX);
+
+		// This will ensure you can't resize beyond the maximum allowed width
+		var delta = Math.min(maxPageX, Math.max(minPageX, pageX + diff)) - pageX;
+
+		resizeColumn(column_index, delta);
+		applyHeaderAndColumnWidths();
+		submitColResize();
+	};
+
+	this.resizeColumnsToContent = function () {
+		for (var i = 0, l = cache.activeColumns.length; i < l; i++) {
+			c = cache.activeColumns[i];
+			resizeColumnToContent(c);
+		}
+	};
+
 
 	/**
 	 * Resizes the tables outer container to fit the total height of all visible rows
@@ -8916,31 +8964,9 @@ var DobyGrid = function (options) {
 			if (!$(event.target).closest('.' + CLS.handle).length) return;
 
 			var column = getColumnFromEvent(event);
-			if (!column) return;
-			var column_index = cache.columnsById[column.id],
-				// Either use the width of the column's content or the min column width
-				currentWidth = column.width,
-				newWidth = Math.max(getColumnContentWidth(column_index), column.minWidth);
 
-			// Do nothing if width isn't changed
-			if (currentWidth == newWidth) return;
+			resizeColumnToContent(column);
 
-			var pageX = event.pageX;
-
-			lockColumnWidths(column_index);
-
-			// Calculate resize diff
-			var diff = newWidth - currentWidth;
-
-			// Duplicate the drag functionality
-			prepareLeeway(column_index, pageX);
-
-			// This will ensure you can't resize beyond the maximum allowed width
-			var delta = Math.min(maxPageX, Math.max(minPageX, pageX + diff)) - pageX;
-
-			resizeColumn(column_index, delta);
-			applyHeaderAndColumnWidths();
-			submitColResize();
 		});
 
 		// Create drag handles
@@ -9028,7 +9054,7 @@ var DobyGrid = function (options) {
 					sorting = JSON.parse(JSON.stringify(self.sorting));
 					sorting.push({
 						columnId: column.id,
-						sortAsc: true
+						sortAsc: column.sortAsc
 					});
 				}
 			} else {
@@ -9044,7 +9070,7 @@ var DobyGrid = function (options) {
 				} else {
 					sorting = [{
 						columnId: column.id,
-						sortAsc: true
+						sortAsc: column.sortAsc
 					}];
 				}
 			}
