@@ -234,7 +234,7 @@ var DobyGrid = function (options) {
 		resetAggregators,
 		resizeCanvas,
 		resizeColumn,
-		resizeColumnsToContent,
+		resizeColumnToContent,
 		resizeContainer,
 		scrollCellIntoView,
 		scrollLeft = 0,
@@ -8075,7 +8075,7 @@ var DobyGrid = function (options) {
 
 	this.resizeColumnsToContent = function () {
 		for (var i = 0, l = cache.activeColumns.length; i < l; i++) {
-			c = cache.activeColumns[i];
+			var c = cache.activeColumns[i];
 			resizeColumnToContent(c);
 		}
 	};
