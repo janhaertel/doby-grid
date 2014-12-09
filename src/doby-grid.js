@@ -6011,9 +6011,7 @@ var DobyGrid = function (options) {
 			}
 
 			// Handle sticky group headers
-			if (self.options.stickyGroupRows && self.isGrouped()) {
-				stickGroupHeaders(scrollTop);
-			}
+			stickGroupHeaders(scrollTop);
 		}
 
 		// Any Scroll
@@ -7530,9 +7528,7 @@ var DobyGrid = function (options) {
 		lastRenderedScrollLeft = scrollLeft;
 
 		// Handle sticky group headers
-		if (self.options.stickyGroupRows && self.isGrouped()) {
-			stickGroupHeaders(scrollTop);
-		}
+		stickGroupHeaders(scrollTop);
 
 		// If grid is empty - show empty overlay
 		if (!self.fetcher && self.collection.length === 0) insertEmptyOverlay();
@@ -9037,6 +9033,10 @@ var DobyGrid = function (options) {
 					}.bind(this), 1);
 
 					submitColResize();
+
+					// If sticky groups headers are enabled, we need to redraw them as the
+					// rendered row is no longer correct
+					stickGroupHeaders(scrollTop);
 				});
 		});
 	};
@@ -9324,12 +9324,19 @@ var DobyGrid = function (options) {
 	 * @param	{integer}	scrollTop		- Current scroll position
 	 */
 	stickGroupHeaders = function (scrollTop) {
+		// Confirm that sticky headers are actually needed
+		if (!self.options.stickyGroupRows || !self.isGrouped()) return;
+
+		// Create a stickyGroup cache if it doesn't already exist
+		if (!cache.stickyGroups) cache.stickyGroups = [];
+
 		// Find top-most group
 		var topRow = getRowFromPosition(scrollTop),
 			topGroup = getGroupFromRow(topRow),
 			stickyGroups = [topGroup];
 
-		// TODO: Group could not be found for some reason. Investigate why this might happen
+		// Group could not be found for some reason. Perhaps because
+		// the grid hasn't finished rendering (like during a resize event)
 		if (!topGroup) return;
 
 		var buildParentGroups = function (group) {
@@ -9342,16 +9349,32 @@ var DobyGrid = function (options) {
 		// Build an array of nested groups to display
 		buildParentGroups(topGroup);
 
+		// Check to see if the sticky groups have changed since last render
+		var haveStickyGroupsChanged = false;
+		for (var s = 0, sl = stickyGroups.length; s < sl; s++) {
+			if (!cache.stickyGroups[s] || stickyGroups[s].id !== cache.stickyGroups[s].id) {
+				haveStickyGroupsChanged = true;
+				break;
+			}
+		}
+
 		var i = stickyGroups.length,
 			group,
-			offset = $viewport.position().top;
+			offset = $viewport.position().top,
+			isFirstGroupCollapsed = i && stickyGroups[0].collapsed ? true : false,
+			isFirstGroupEmptyNull = i && stickyGroups[0].value === null && !stickyGroups[0].predef.groupNulls;
 
-		// If we're at the very top - do nothing, just clean up
-		if (scrollTop === 0) {
+		// Reset currently rendered groups
+		if (scrollTop === 0 || isFirstGroupCollapsed || isFirstGroupEmptyNull || haveStickyGroupsChanged) {
 			cache.stickyRows = [];
 			$viewport.parent().children('.' + CLS.sticky).remove();
-			return;
 		}
+
+		// If we're at the top - don't draw any sticky groups
+		if (scrollTop === 0) return;
+
+		// Cache sticky groups
+		cache.stickyGroups = stickyGroups;
 
 		while (i--) {
 			group = stickyGroups[i];
@@ -9621,13 +9644,15 @@ var DobyGrid = function (options) {
 			}
 		}
 
-		// Menu data object which will define what the menu will have
-		//
-		// @param	divider		{boolean}		If true, item will be a divider
-		// @param	enabled		{boolean}		Will draw item only if true
-		// @param	name		{string}		Name of menu item to display to user
-		// @param	fn			{function}	Function to execute when item clicked
-		//
+		/**
+		 * Menu data object which will define what the menu will have
+		 *
+		 * @param	divider		{boolean}		If true, item will be a divider
+		 * @param	enabled		{boolean}		Will draw item only if true
+		 * @param	name		{string}		Name of menu item to display to user
+		 * @param	fn			{function}	Function to execute when item clicked
+		 *
+		 */
 		var menuData = [{
 			enabled: column || self.options.quickFilter,
 			name: getLocale('column.options'),
