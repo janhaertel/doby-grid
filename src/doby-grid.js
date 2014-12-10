@@ -10021,6 +10021,9 @@ var DobyGrid = function (options) {
 						}
 					}
 				}
+				if (Object.keys(removedRowHash).length === cache.activeColumns.length){
+					$(cache.nodes[row].rowNode).removeClass(self.options.selectedClass);
+				}
 			}
 
 			if (addedRowHash) {
