@@ -5887,6 +5887,16 @@ var DobyGrid = function (options) {
 					return true;
 				});
 				break;
+			case 13 :
+				if (self.options.editable && self.currentEditor) {
+					handled = commitCurrentEdit(function (result) {
+						if (result) {
+							navigate("down");
+							reselectRow();
+						}
+					});
+				}
+				break;
 			// Left arrow
 			case 37 :
 				handled = handleNavigateKey(function () {
