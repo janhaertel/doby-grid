@@ -3386,7 +3386,7 @@ var DobyGrid = function (options) {
 		deselectCells(rowIndex);
 		var rowNode = cache.nodes[rowIndex] ? cache.nodes[rowIndex].rowNode : null;
 		if (rowNode) {
-			$(rowNode).addClass(self.options.selectedClass);
+			$(rowNode).removeClass(self.options.selectedClass);
 		}
 	};
 
