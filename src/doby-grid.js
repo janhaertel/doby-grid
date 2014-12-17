@@ -381,6 +381,7 @@ var DobyGrid = function (options) {
 		rowHeight:				28,
 		rowSpacing:				0,
 		rowBasedSelection:		false,
+		rowsToPrefetch:			0,
 		scrollbarPosition:		"right",
 		scrollLoader:			null,
 		selectable:				true,
@@ -643,8 +644,11 @@ var DobyGrid = function (options) {
 				}.bind(this));
 
 				// Subscribe to scroll events
-				this.on('viewportchanged', function () {
-					remoteFetch();
+				this.on('viewportchanged', function (event, args) {
+					// Fetch remote results on vertical scroll
+					if (args.scrollTopDelta > 0) {
+						remoteFetch();
+					}
 				});
 			}
 
@@ -3478,6 +3482,9 @@ var DobyGrid = function (options) {
 
 		// Remove the garbage bin
 		$('#' + CLS.garbage).remove();
+
+		// Call destroy event
+		this.trigger('destroy', this._event);
 	};
 
 
@@ -6000,22 +6007,22 @@ var DobyGrid = function (options) {
 		scrollTop = $viewport[0].scrollTop;
 		scrollLeft = $viewport[0].scrollLeft;
 
-		var vScrollDist = Math.abs(scrollTop - prevScrollTop),
-			hScrollDist = Math.abs(scrollLeft - prevScrollLeft);
+		var scrollTopDelta = Math.abs(scrollTop - prevScrollTop),
+			scrollLeftDelta = Math.abs(scrollLeft - prevScrollLeft);
 
 		// Horizontal Scroll
-		if (hScrollDist) {
+		if (scrollLeftDelta) {
 			prevScrollLeft = scrollLeft;
 			if (self.options.showHeader) $headerScroller[0].scrollLeft = scrollLeft;
 		}
 
 		// Vertical Scroll
-		if (vScrollDist) {
+		if (scrollTopDelta) {
 			vScrollDir = prevScrollTop < scrollTop ? 1 : -1;
 			prevScrollTop = scrollTop;
 
 			// Switch virtual pages if needed
-			if (vScrollDist < viewportH) {
+			if (scrollTopDelta < viewportH) {
 				scrollTo(scrollTop + offset);
 			} else {
 				var oldOffset = offset;
@@ -6035,7 +6042,7 @@ var DobyGrid = function (options) {
 		}
 
 		// Any Scroll
-		if (hScrollDist || vScrollDist) {
+		if (scrollLeftDelta || scrollTopDelta) {
 			if (h_render) clearTimeout(h_render);
 
 			if (
@@ -6076,14 +6083,18 @@ var DobyGrid = function (options) {
 
 				self.trigger('viewportchanged', event, {
 					scrollLeft: scrollLeft,
-					scrollTop: scrollTop
+					scrollTop: scrollTop,
+					scrollLeftDelta: scrollLeftDelta,
+					scrollTopDelta: scrollTopDelta
 				});
 			}
 		}
 
 		self.trigger('scroll', event, {
 			scrollLeft: scrollLeft,
-			scrollTop: scrollTop
+			scrollTop: scrollTop,
+			scrollLeftDelta: scrollLeftDelta,
+			scrollTopDelta: scrollTopDelta
 		});
 	};
 
@@ -6960,6 +6971,14 @@ var DobyGrid = function (options) {
 				to = vp.bottom,
 				count = to - from;
 
+			// Decrease likelihood that user sees empty rows before the results
+			// load by prefetching extra ones.
+			if (vScrollDir == -1) {
+				from -= self.options.rowsToPrefetch;
+			} else {
+				to += self.options.rowsToPrefetch;
+			}
+
 			if (from < 0) from = 0;
 
 			if (self.options.paginationStyle !== "infinite") {
@@ -7057,6 +7076,10 @@ var DobyGrid = function (options) {
 				}
 			}
 
+			// Determine if rows to load are already visible by checking for
+			// overlap between we're fetching and current visible ones.
+			var loadingVisibleRows = newFrom <= vp.bottom && vp.top <= newTo;
+
 			// Run the fetcher
 			remoteFetcher({
 				columns: cache.activeColumns,
@@ -7120,7 +7143,7 @@ var DobyGrid = function (options) {
 				dfd.resolve();
 			}, function () {
 				dfd.resolve();
-			});
+			}, loadingVisibleRows);
 
 			return dfd.promise();
 		};
@@ -7174,14 +7197,18 @@ var DobyGrid = function (options) {
 	 * @memberof DobyGrid
 	 * @private
 	 *
-	 * @param	{object}	options			- Fetching options
-	 * @param	{function}	callback		- Callback function
-	 * @param	{function}	clear_callback	- Callback fired if the timeout was cleared
+	 * @param	{object}	options				- Fetching options
+	 * @param	{function}	callback			- Callback function
+	 * @param	{function}	clear_callback		- Callback fired if the timeout was cleared
+	 * @param	{boolean}	loadingVisibleRows	- If true, rows being loaded are inside the visible range
 	 *
 	 */
-	remoteFetcher = function (options, callback, clear_callback) {
+	remoteFetcher = function (options, callback, clear_callback, loadingVisibleRows) {
 		callback = callback || function () {};
 		clear_callback = clear_callback || function () {};
+
+		// Assume by default that the rows to load are inside the visible range.
+		loadingVisibleRows = typeof loadingVisibleRows !== 'undefined' ? loadingVisibleRows : true;
 
 		// Ensure basic options are defined
 		if (!options.offset) options.offset = 0;
@@ -7197,7 +7224,7 @@ var DobyGrid = function (options) {
 		remoteTimer = setTimeout(function () {
 			try {
 				// Fire onLoading callback
-				if (typeof self.fetcher.onLoading === 'function') self.fetcher.onLoading();
+				if (typeof self.fetcher.onLoading === 'function') self.fetcher.onLoading(loadingVisibleRows);
 
 				self.fetcher.request = self.fetcher.fetch(options, function (results) {
 					// Empty the request variable so it doesn't get aborted on scroll
@@ -7206,7 +7233,7 @@ var DobyGrid = function (options) {
 					callback(results);
 
 					// Fire onLoaded callback
-					if (typeof self.fetcher.onLoaded === 'function') self.fetcher.onLoaded();
+					if (typeof self.fetcher.onLoaded === 'function') self.fetcher.onLoaded(loadingVisibleRows);
 				});
 			} catch (err) {
 				throw new Error('Doby Grid remote fetching failed due to: ' + err);
@@ -8061,6 +8088,7 @@ var DobyGrid = function (options) {
 		}
 	};
 
+
 	/**
 	 * Given a column, resizes the column according to its contents
 	 * @method resizeColumnToContent
@@ -8103,15 +8131,15 @@ var DobyGrid = function (options) {
 		(submit || typeof(submit) === "undefined" || submit === null) && submitColResize(silent);
 	};
 
+
 	/**
 	 * Resizes all columns according to their contents
 	 * @method resizeColumnsToContent
 	 * @memberof DobyGrid
-	 * @private
 	 *
-	 * @param 	{object} 	useMaxWidth - Take the maximum width of the columns into account
-	 * @param 	{boolean} 	once 		- Submit the colum resize only once for all columns
-	 * @param 	{boolean} 	silent 		- Don't trigger resize events
+	 * @param 	{boolean} 	useMaxWidth 	- Take the maximum width of the columns into account
+	 * @param 	{boolean} 	once 			- Submit the column resize only once for all columns
+	 * @param 	{boolean} 	silent 			- Don't trigger resize events
 	 */
 	this.resizeColumnsToContent = function (useMaxWidth, once, silent) {
 		for (var i = 0, l = cache.activeColumns.length; i < l; i++) {
@@ -8122,6 +8150,8 @@ var DobyGrid = function (options) {
 		if (once) {
 			submitColResize(silent);
 		}
+
+		return this;
 	};
 
 
@@ -8370,12 +8400,15 @@ var DobyGrid = function (options) {
 		}
 
 		if (prevScrollTop != newScrollTop) {
+			var scrollTopDelta = Math.abs(newScrollTop - prevScrollTop);
 			vScrollDir = (prevScrollTop + oldOffset < newScrollTop + offset) ? 1 : -1;
 			$viewport[0].scrollTop = (lastRenderedScrollTop = scrollTop = prevScrollTop = newScrollTop);
 
 			self.trigger('viewportchanged', null, {
 				scrollLeft: 0,
-				scrollTop: scrollTop
+				scrollTop: scrollTop,
+				scrollLeftDelta: 0,
+				scrollTopDelta: scrollTopDelta
 			});
 		}
 	};

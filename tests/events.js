@@ -203,6 +203,16 @@ describe("Events", function () {
 			var $cell = grid.$el.find('.doby-grid-cell').first();
 			$cell.simulate('dblclick');
 		},
+		'destroy': function (callback) {
+			var grid = resetGrid(defaultData());
+
+			// Subscribe to event
+			grid.on('destroy', function (event, args) {
+				callback(event, args, undefined);
+			});
+
+			grid.destroy();
+		},
 		'headerclick': function (callback) {
 			var grid = resetGrid(defaultData());
 
@@ -445,7 +455,9 @@ describe("Events", function () {
 			grid.on('scroll', function (event, args) {
 				callback(event, args, {
 					scrollLeft: 0,
-					scrollTop: 0
+					scrollTop: 0,
+					scrollLeftDelta: 0,
+					scrollTopDelta: 0
 				});
 			});
 
@@ -548,7 +560,9 @@ describe("Events", function () {
 			grid.on('viewportchanged', function (event, args) {
 				callback(event, args, {
 					scrollLeft: 0,
-					scrollTop: 2871
+					scrollTop: 2871,
+					scrollLeftDelta: 0,
+					scrollTopDelta: 2871
 				});
 			});
 
