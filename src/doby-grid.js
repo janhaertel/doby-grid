@@ -739,7 +739,7 @@ var DobyGrid = function (options) {
 						}
 
 						if ($viewport.scrollTop() != prevScroll[1]) {
-							$viewport.scrollTop(prevScroll[1] + (viewportHasHScroll ? window.scrollbarDimensions.height : 0));
+							$viewport.scrollTop(prevScroll[1]);
 						}
 					}
 				}
