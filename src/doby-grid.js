@@ -10245,7 +10245,7 @@ var DobyGrid = function (options) {
 			scrollTo(scrollTop + offset);
 		} else {
 			// scroll to bottom
-			scrollTo(th - viewportH);
+			scrollTo(th - viewportH + (viewportHasHScroll ? window.scrollbarDimensions.height : 0));
 		}
 
 		// If autoColumnWidth is enabled and the scrollbar has disappeared - we need to resize
