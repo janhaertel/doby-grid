@@ -734,8 +734,13 @@ var DobyGrid = function (options) {
 						$(this).focus();
 
 						// Restore scroll
-						$viewport.scrollLeft(prevScroll[0]);
-						$viewport.scrollTop(prevScroll[1] + (viewportHasHScroll ? window.scrollbarDimensions.height : 0));
+						if ($viewport.scrollLeft() != prevScroll[0]) {
+							$viewport.scrollLeft(prevScroll[0]);
+						}
+
+						if ($viewport.scrollTop() != prevScroll[1]) {
+							$viewport.scrollTop(prevScroll[1] + (viewportHasHScroll ? window.scrollbarDimensions.height : 0));
+						}
 					}
 				}
 
