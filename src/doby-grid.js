@@ -5906,15 +5906,19 @@ var DobyGrid = function (options) {
 				break;
 			// Left arrow
 			case 37 :
-				handled = handleNavigateKey(function () {
-					return navigate("left");
-				});
+				if (!self.options.editable || !self.currentEditor) {
+					handled = handleNavigateKey(function () {
+						return navigate("left");
+					});
+				}
 				break;
 			// Right Arrow
 			case 39 :
-				handled = handleNavigateKey(function () {
-					return navigate("right");
-				});
+				if (!self.options.editable || !self.currentEditor) {
+					handled = handleNavigateKey(function () {
+						return navigate("right");
+					});
+				}
 				break;
 			// Page Down
 			case 34 :
