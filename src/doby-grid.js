@@ -729,13 +729,13 @@ var DobyGrid = function (options) {
 
 						// Prevent page from scrolling when the grid is focused.
 						// Remember previous scroll position.
-						var prevScroll = [window.scrollX, window.scrollY];
-
+						var prevScroll = [$viewport.scrollLeft(), $viewport.scrollTop()];
 						// This will un-necessarily scroll the page
 						$(this).focus();
 
 						// Restore scroll
-						window.scrollTo(prevScroll[0], prevScroll[1]);
+						$viewport.scrollLeft(prevScroll[0]);
+						$viewport.scrollTop(prevScroll[1] + (viewportHasHScroll ? window.scrollbarDimensions.height : 0));
 					}
 				}
 
