@@ -1,3 +1,1247 @@
+// doby-grid.js 0.1.1
+// (c) 2014 Evgueni Naverniouk, Globex Designs, Inc.
+// Doby may be freely distributed under the MIT license.
+// For all details and documentation:
+// https://github.com/globexdesigns/doby-grid
+
+!function(e){if("object"==typeof exports&&"undefined"!=typeof module)module.exports=e();else if("function"==typeof define&&define.amd)define([],e);else{var f;"undefined"!=typeof window?f=window:"undefined"!=typeof global?f=global:"undefined"!=typeof self&&(f=self),f.DobyGrid=e()}}(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+"use strict";
+
+var CLS 		= require('./../utils/classes.js'),
+	NonDataItem = require('./NonDataItem.js');
+
+/**
+ * @class Aggregate
+ * @classdesc Information about data totals.
+ * @augments NonDataItem
+ *
+ * An instance of Aggregate will be created for each totals row and passed to the aggregators
+ * so that they can store arbitrary data in it. That data can later be accessed by group totals
+ * formatters during the display.
+ *
+ * @param	{array}		aggregators		- List of aggregators for this object
+ *
+ * @returns {object}
+ */
+var Aggregate = function (aggregators) {
+	this.aggregators = aggregators;
+	this.class = CLS.rowtotal;
+	this.columns = {};
+	this.editable = false;
+	this.focusable = true;
+	this.selectable = false;
+};
+
+Aggregate.prototype = new NonDataItem();
+Aggregate.prototype._aggregateRow = true;
+
+Aggregate.prototype.toString = function () {
+	return "Aggregate";
+};
+
+Aggregate.prototype.exporter = function (columnDef) {
+	if (this.aggregators[columnDef.id]) {
+		var aggr;
+		for (var aggr_idx in this.aggregators[columnDef.id]) {
+			aggr = this.aggregators[columnDef.id][aggr_idx];
+			if (aggr.active && aggr.exporter) {
+				return aggr.exporter();
+			}
+		}
+	}
+	return "";
+};
+
+Aggregate.prototype.formatter = function (row, cell, value, columnDef) {
+	if (this.aggregators[columnDef.id]) {
+		var aggr;
+		for (var aggr_idx in this.aggregators[columnDef.id]) {
+			aggr = this.aggregators[columnDef.id][aggr_idx];
+			if (aggr.active && aggr.formatter) {
+				return aggr.formatter();
+			}
+		}
+	}
+	return "";
+};
+
+module.exports = Aggregate;
+},{"./../utils/classes.js":12,"./NonDataItem.js":7}],2:[function(require,module,exports){
+/* global $ */
+
+"use strict";
+
+var CLS = require('./../utils/classes'),
+	removeElement = require('./../utils/removeElement');
+
+/**
+ * @class CellRangeDecorator
+ * @classdesc Displays an overlay on top of a given cell range
+ */
+// TODO: Remove getCellNodeBox from the params here
+var CellRangeDecorator = function ($target, getCellNodeBox) {
+	this.$el = null;
+	this.$canvas = $target;
+	this.getCellNodeBox = getCellNodeBox;
+};
+
+CellRangeDecorator.prototype.show = function (range) {
+	if (!this.$el) {
+		this.$el = $('<div class="' + CLS.rangedecorator + '"></div>')
+			.appendTo(this.$canvas);
+		this.$stats = $('<span class="' + CLS.rangedecoratorstat + '"></span>')
+			.appendTo(this.$el);
+	}
+
+	var from = this.getCellNodeBox(range.fromRow, range.fromCell),
+		to = this.getCellNodeBox(range.toRow, range.toCell),
+		borderBottom = parseInt(this.$el.css('borderBottomWidth'), 10),
+		borderLeft = parseInt(this.$el.css('borderLeftWidth'), 10),
+		borderRight = parseInt(this.$el.css('borderRightWidth'), 10),
+		borderTop = parseInt(this.$el.css('borderTopWidth'), 10);
+
+	if (from && to) {
+		var width = to.right - from.left - borderLeft - borderRight;
+
+		this.$el.css({
+			top: from.top,
+			left: from.left,
+			height: to.bottom - from.top - borderBottom - borderTop,
+			width: width
+		});
+
+		// Only display stats box if there is enough room
+		if (width > 200) {
+			// Calculate number of selected cells
+			this.$stats.show().html([
+				'<strong>Selection:</strong> ', range.getCellCount(), ' cells',
+				' <strong>From:</strong> ', (range.fromRow + 1), ':', (range.fromCell + 1),
+				' <strong>To:</strong> ', (range.toRow + 1), ':', (range.toCell + 1)
+			].join(''));
+		} else {
+			this.$stats.hide();
+		}
+	}
+
+	return this.$el;
+};
+
+CellRangeDecorator.prototype.hide = function () {
+	if (this.$el && this.$el.length) {
+		removeElement(this.$el[0]);
+	}
+	this.$el = null;
+};
+
+module.exports = CellRangeDecorator;
+},{"./../utils/classes":12,"./../utils/removeElement":14}],3:[function(require,module,exports){
+/* global $, Backbone */
+
+"use strict";
+
+var CLS = require('./../utils/classes');
+
+
+/**
+ * Given an input field object, will tell you where the cursor is positioned
+ * @method getCaretPosition
+ *
+ * @param	{DOMObject}		input		- Input dom element
+ *
+ * @returns {integer}
+ */
+var getCaretPosition = function (input) {
+	var pos = 0;
+
+	if (document.selection) {
+		// IE Specific
+		input.focus();
+		var oSel = document.selection.createRange();
+		oSel.moveStart('character', -input.value.length);
+		pos = oSel.text.length;
+	} else if (input.selectionStart !== input.selectionEnd) {
+		// If text is selected -- return null
+		return null;
+	} else if (input.selectionStart || input.selectionStart == '0') {
+		// Find cursor position
+		pos = input.selectionStart;
+	}
+
+	return pos;
+};
+
+
+/**
+ * Default editor object that handles cell reformatting and processing of edits
+ * @class defaultEditor
+ *
+ * @param	{object}	self		- Current DobyGrid instance
+ * @param	{object}	options		- Editor arguments
+ *
+ */
+var DefaultEditor = function (self, options) {
+
+	/**
+	 * The editor is actived when an active cell in the grid is focused.
+	 * This should generate any DOM elements you want to use for your editor.
+	 * @method initialize
+	 * @memberof defaultEditor
+	 */
+	this.initialize = function () {
+		// Will hold the current value of the item being edited
+		this.loadValue(options.item);
+
+		var value = this.currentValue;
+		if (value === null || value === undefined) value = "";
+
+		this.$input = $('<input type="text" class="' + CLS.editor + '" value="' + value + '"/>')
+			.appendTo(options.cell)
+			.on("keydown", function (event) {
+				// Escape out of here on 'Tab', 'Enter', 'Home, 'End', 'Page Up' and 'Page Down'
+				// so that the grid can capture that event
+				if ([9, 13, 33, 34, 35, 36].indexOf(event.which) >= 0) {
+					event.preventDefault();
+					return;
+				}
+
+				// Esc
+				if (event.which == 27) return;
+
+				// Check if position of cursor is on the ends, if it's not then
+				// left or right arrow keys will prevent editor from saving
+				// results and will instead, move the text cursor
+				var pos = getCaretPosition(this);
+
+				if ((pos === null && event.which != 38 && event.which != 40) ||
+					(pos > 0 && event.which === 37) ||
+					(pos < $(this).val().length && event.which === 39)
+				) {
+					event.stopImmediatePropagation();
+				}
+			});
+	};
+
+
+	/**
+	 * This is the function that will update the data model in the grid.
+	 * @method applyValue
+	 * @memberof defaultEditor
+	 *
+	 * @param	{array}		items		- Array of row data to update
+	 * @param	{string}	value		- The user-input value being entered
+	 *
+	 */
+	this.applyValue = function (items, value) {
+		var item;
+
+		for (var i = 0, l = items.length; i < l; i++) {
+			item = items[i];
+
+			// Make sure we always have an id for our item
+			if (!(self.options.idProperty in item.item) && item.column.field == self.options.idProperty) {
+				item.item[self.options.idProperty] = value;
+			}
+
+			if (item.item instanceof Backbone.Model) {
+				item.item.set(item.column.field, value);
+			} else {
+				// This might be a nested row with no data
+				if (item.item.data) {
+					item.item.data[item.column.field] = value;
+				}
+			}
+		}
+	};
+
+
+	/**
+	 * Cancel the edit and return the cell to its default state
+	 * @method cancel
+	 * @memberof defaultEditor
+	 */
+	this.cancel = function () {};
+
+
+	/**
+	 * Destroys any elements your editor has created.
+	 * @method destroy
+	 * @memberof defaultEditor
+	 */
+	this.destroy = function () {
+		// Clear any invalid cells
+		options.grid.$el.find('.' + CLS.invalid).removeClass(CLS.invalid);
+		this.$input.remove();
+	};
+
+
+	/**
+	 * When the cell with an initialized editor is focused
+	 * @method focus
+	 * @memberof defaultEditor
+	 */
+	this.focus = function () {
+		this.$input.focus().select();
+	};
+
+
+	/**
+	 * Gets the current value of whatever the user has inputted
+	 * @method getValue
+	 * @memberof defaultEditor
+	 *
+	 * @returns {string}
+	 */
+	this.getValue = function () {
+		return this.$input.val();
+	};
+
+
+	/**
+	 * Determines whether or not the value has changed
+	 * @method isValueChanged
+	 * @memberof defaultEditor
+	 *
+	 * @returns {boolean}
+	 */
+	this.isValueChanged = function () {
+		return (!(this.$input.val() === "" && this.currentValue === null)) && (this.$input.val() != this.currentValue);
+	};
+
+
+	/**
+	 * Loads the current value for the item
+	 * @method loadValue
+	 * @memberof defaultEditor
+	 *
+	 * @param	{object}	item		- Data model object that is being edited
+	 */
+	this.loadValue = function (item) {
+		if (!item) return null;
+		var value = item instanceof Backbone.Model ? item.get(options.column.field) : item.data ? item.data[options.column.field] : null;
+		this.currentValue = value || "";
+		return this.currentValue;
+	};
+
+
+	/**
+	 * Process the input value before submitting it
+	 * @method serializeValue
+	 * @memberof defaultEditor
+	 */
+	this.serializeValue = function () {
+		return this.$input.val();
+	};
+
+
+	/**
+	 * Sets the value inside your editor, in case some internal grid calls needs to do
+	 * it dynamically.
+	 * @method setValue
+	 * @memberof defaultEditor
+	 *
+	 * @param	{string}	val			- Value to set
+	 */
+	this.setValue = function (val) {
+		this.$input.val(val);
+	};
+
+
+	/**
+	 * What to do when the validation for an edit fails. Here you can highlight the cell
+	 * and show the user the error message.
+	 * @method showInvalid
+	 * @memberof defaultEditor
+	 *
+	 * @param	{array}		results		- Results array from your validate() function
+	 */
+	this.showInvalid = function (results) {
+		var result;
+		for (var i = 0, l = results.length; i < l; i++) {
+			result = results[i];
+
+			// Add Invalid Icon
+			result.$cell.append([
+				'<span class="', CLS.invalidicon, '" title="', result.msg, '"></span>'
+			].join(''));
+
+			// Highlight Cell
+			result.$cell
+				.removeClass(CLS.invalid)
+				.width(); // Force layout
+			result.$cell.addClass(CLS.invalid);
+		}
+	};
+
+
+	/**
+	 * Validation step for the value before allowing a save. Should return back either
+	 * true or an array of objects like this:
+	 * @method validate
+	 * @memberof defaultEditor
+	 *
+	 * @example
+	 * [{
+	 *	row: 1,
+	 *	cell: 1,
+	 *	$cell: $(..),
+	 *	msg: 'Your failure message here.'
+	 * }, {
+	 *	row: 1,
+	 *	cell: 2,
+	 *	$cell: $(..),
+	 *	msg: 'Your failure message here.'
+	 * }]
+	 *
+	 * @param	{array}		items		- Array of edits to validate
+	 * @param	{function}	callback	- Callback function
+	 *
+	 */
+	this.validate = function (items, callback) {
+		var results = [];
+
+		// Sample code for validation failure
+		/*
+		for (var i = 0, l = items.length; i < l; i++) {
+			results.push({
+				row: items[i].row,
+				cell: items[i].cell,
+				$cell: items[i].$cell,
+				msg: "You cannot use " + this.getValue() + " as your value."
+			});
+		}
+		*/
+
+		// No errors
+		if (results.length === 0) results = true;
+
+		callback(results);
+	};
+
+	return this.initialize();
+};
+
+module.exports = DefaultEditor;
+},{"./../utils/classes":12}],4:[function(require,module,exports){
+"use strict";
+
+/**
+ * Default formatting functions for all cell rendering. Returns an HTML string.
+ * @method defaultFormatter
+ *
+ * @param	{integer}	row			- Index of the row is located
+ * @param	{integer}	cell		- Index of the
+ * @param	{string}	value		- The value of this cell from the data object for this row
+ * @param	{object}	[columnDef]	- The column definition object for the given column
+ * @param	{object}	[data]		- The full data object for the given cell
+ *
+ * @returns {string}
+ */
+var DefaultFormatter = function (row, cell, value, columnDef, data) {
+	// These variables aren't used in the default editor, but are available to you
+	// for customization. This line is left here for JSDoc reasons.
+	if (columnDef || data) {}
+
+	// Never write "undefined" or "null" in the grid -- that's just bad programming
+	if (value === undefined || value === null) {
+		return "";
+	}
+
+	// Some simple HTML escaping
+	return (value + "")
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;");
+};
+
+module.exports = DefaultFormatter;
+},{}],5:[function(require,module,exports){
+/* global $ */
+
+"use strict";
+
+var CLS  			= require('./../utils/classes'),
+	removeElement	= require('./../utils/removeElement');
+
+/**
+ * Creates a new dropdown menu.
+ * @class Dropdown
+ *
+ * @param	{object}	[event]			- Javascript event object
+ * @param	{object}	[options]		- Additional dropdown options
+ *
+ * @returns {object}
+ */
+var Dropdown = function (event, options) {
+
+	// Is the dropdown currently shown?
+	this.open = false;
+
+	/**
+	 * Initializes the class
+	 * @method initialize
+	 * @memberof Dropdown
+	 */
+	this.initialize = function () {
+		var uid = "doby-grid-" + Math.round(1000000 * Math.random());
+
+		this.$parent = options.parent || $(event.currentTarget);
+		this.$el = options.menu;
+		this.id = [uid, CLS.dropdown, options.id].join('_');
+
+		// Create data store in the parent object if it doesn't already exist
+		var existing = null;
+		if (!this.$parent.data(CLS.dropdown)) {
+			this.$parent.data(CLS.dropdown, []);
+		} else {
+			// Also find the existing dropdown for this id (if it exists)
+			existing = this.$parent.data(CLS.dropdown).filter(function (i) {
+				return i.id == this.id;
+			}.bind(this));
+			if (existing) existing = existing[0];
+		}
+
+		// If this parent already has a dropdown enabled -- initializing will close it
+		if (existing && existing.open) {
+			existing.hide();
+		} else {
+			// Ensure dropdown has the right styling
+			this.$el.attr('id', this.id);
+			this.$el.addClass(['off', CLS.dropdown].join(' '));
+			this.show();
+		}
+
+		// Clicking outside - closes the dropdown
+		var bodyClose;
+		bodyClose = function (e) {
+			if (e.target == event.target) return;
+			this.hide();
+			$(document).off('click', bodyClose);
+			$(document).off('context', bodyClose);
+		}.bind(this);
+
+		$(document).on('click', bodyClose);
+		$(document).on('contextmenu', bodyClose);
+
+		// Esc - closes the dropdown
+		var bodyEscape;
+		bodyEscape = function (e) {
+			if (e.keyCode == 27) {
+				this.hide();
+				$(document).off('keydown', bodyEscape);
+			}
+		}.bind(this);
+		$(document).one('keydown', bodyEscape);
+
+		return this;
+	};
+
+
+	/**
+	 * Positions the dropdown in the right spot
+	 * @method position
+	 * @memberof Dropdown
+	 */
+	this.position = function () {
+		var top = event.pageY,
+			left = event.pageX,
+			menu_width = this.$el.outerWidth(),
+			menu_height = this.$el.outerHeight(),
+			required_width = event.clientX + menu_width,
+			required_height = event.clientY + menu_height,
+			b = $(document.body),
+			available_width = b.width(),
+			available_height = b.height();
+
+		// Determine position of main dropdown
+
+		// If no room on the right side, throw dropdown to the left
+		if (available_width < required_width) {
+			left -= menu_width;
+		}
+
+		// If no room on the right side for submenu, throw submenus to the left
+		if (available_width < required_width + menu_width) {
+			this.$el.addClass(CLS.dropdownleft);
+		}
+
+		// If no room on the bottom, throw dropdown upwards
+		if (available_height < required_height) {
+			top -= menu_height;
+		}
+
+		this.$el.css({
+			left: Math.max(left, 0),
+			top: Math.max(top, 0)
+		});
+
+		// Now, loop through all of the submenus and determine which way they should drop
+		// depending on how much screen space there is
+		var pos, off, height, width, leftright, parentWidth;
+		this.$el.children('.' + CLS.dropdownmenu + ':first').find('.' + CLS.dropdownmenu).each(function () {
+			pos = $(this).position();
+			off = $(this).offset();
+			height = $(this).outerHeight();
+			width = $(this).outerWidth();
+			parentWidth = $(this).parent().outerWidth();
+
+			// Determine whether to drop to left or right
+			leftright = (off.left + parentWidth) - Math.min(pos.left, 0) + width > available_width ? 'drop-left' : 'drop-right';
+			$(this).addClass(leftright);
+
+			// When dropping left - need to set correct position
+			if (leftright == 'drop-left') {
+				$(this).css('left', -width + 'px');
+			}
+
+			// Determine whether to drop to up or down
+			$(this).addClass(event.clientY + height > available_height ? 'drop-up' : 'drop-down');
+		});
+	};
+
+	return this.initialize();
+};
+
+
+/**
+ * Displays the dropdown
+ * @method show
+ * @memberof Dropdown
+ */
+Dropdown.prototype.show = function () {
+	if (this.open) return;
+
+	this.$el.appendTo(document.body);
+
+	this.position();
+
+	var store = this.$parent.data(CLS.dropdown);
+	store.push(this);
+	this.$parent.data(CLS.dropdown, store);
+
+	// Animate fade in
+	setTimeout(function () {
+		this.$el.removeClass('off');
+	}.bind(this), 150);
+
+	this.open = true;
+};
+
+
+/**
+ * Hides the dropdown
+ * @method hide
+ * @memberof Dropdown
+ */
+Dropdown.prototype.hide = function () {
+	if (!this.open || !this.$parent) return;
+
+	if (this.$parent.data(CLS.dropdown)) {
+		var store = this.$parent.data(CLS.dropdown).filter(function (i) {
+			return i != this;
+		}.bind(this));
+
+		this.$parent.data(CLS.dropdown, store);
+
+		this.$el.addClass('off');
+
+		// Animate fade out
+		setTimeout(function () {
+			removeElement(this.$el[0]);
+		}.bind(this), 150);
+
+		this.open = false;
+	}
+};
+
+module.exports = Dropdown;
+},{"./../utils/classes":12,"./../utils/removeElement":14}],6:[function(require,module,exports){
+/* global $ */
+
+"use strict";
+
+var CLS 		= require('./../utils/classes.js'),
+	NonDataItem = require('./NonDataItem.js');
+
+/**
+ * Class that stores information about a group of rows.
+ * @class Group
+ *
+ * @param	{object}	options		- Custom options for this group item
+ */
+var Group = function (options) {
+	options = options || {};
+
+	$.extend(this, {
+		count: 0,				// Number of rows in the group
+		groups: null,			// Sub-groups that are part of this group
+		id: null,				// A unique key used to identify the group
+		level: 0,				// Grouping level, starting with 0 (for nesting groups)
+		grouprows: [],			// Rows that are part of this group
+		selectable: false,		// Don't allow selecting groups
+		title: null,			// Formatted display value of the group
+		value: null				// Grouping value
+	}, options);
+
+	this.columns = {
+		0: {
+			colspan: "*",
+			focusable: false,
+			selectable: false
+		}
+	};
+
+	if (this.predef) {
+		// If group row height or spacing was manipulated - use that value
+		if (this.predef.height !== undefined && this.predef.height !== null) {
+			this.height = this.predef.height;
+		}
+
+		if (this.predef.rowSpacing !== undefined && this.predef.rowSpacing !== null) {
+			this.rowSpacing = this.predef.rowSpacing;
+		}
+
+		if (this.predef.colspan !== undefined) {
+			this.columns[0].colspan = this.predef.colspan;
+		}
+	}
+};
+
+Group.prototype = new NonDataItem();
+Group.prototype._groupRow = true;
+
+Group.prototype.class = function (row, item) {
+	var collapseclass = (item.collapsed ? CLS.collapsed : CLS.expanded),
+		classes = [CLS.group, this.options.collapsible ? CLS.grouptoggle : null, collapseclass];
+
+	if (item.predef.class) {
+		if (typeof(item.predef.class) === 'function') {
+			// Group class functions will use the first column as the argument
+			classes.push(item.predef.class.bind(this)(row, 0, item.value, this.getActiveColumns()[0], item));
+		} else {
+			classes.push(item.predef.class);
+		}
+	}
+
+	return classes.join(' ');
+};
+
+Group.prototype.toString = function () {
+	return "Group";
+};
+
+module.exports = Group;
+},{"./../utils/classes.js":12,"./NonDataItem.js":7}],7:[function(require,module,exports){
+/* global $ */
+
+"use strict";
+
+/**
+ * @class NonDataItem
+ * @classdesc A base class that all special / non-data rows (like Group) derive from.
+ *
+ * @param	{object}	data		- Data object for this item
+ */
+var NonDataItem = function (data) {
+	this.__nonDataRow = true;
+	if (data) $.extend(this, data);
+};
+
+NonDataItem.prototype.toString = function () {
+	return "NonDataItem";
+};
+
+module.exports = NonDataItem;
+},{}],8:[function(require,module,exports){
+"use strict";
+
+var NonDataItem	= require('./NonDataItem');
+
+/**
+ * @class Placeholder
+ * @classdesc An item object used as a placeholder for a remote item.
+ * @augments NonDataItem
+ */
+var Placeholder = function () {};
+Placeholder.prototype = new NonDataItem();
+Placeholder.prototype.__placeholder = true;
+Placeholder.prototype.toString = function () {
+	return "Placeholder";
+};
+
+module.exports = Placeholder;
+},{"./NonDataItem":7}],9:[function(require,module,exports){
+"use strict";
+
+var NonDataItem	= require('./NonDataItem');
+
+/**
+ * @class Range
+ * @classdesc A structure containing a range of cells.
+ *
+ * @param {object}		data		- Data for the cell range
+ * @param {object}		grid		- Current DobyGrid instance
+ */
+var Range = function (data, grid) {
+	var fromRow = data.fromRow,
+		fromCell = data.fromCell,
+		toRow = data.toRow === undefined ? data.fromRow : data.toRow,
+		toCell = data.toCell === undefined ? data.fromCell : data.toCell;
+
+	this._grid = grid;
+
+	// The index of the rows and cells that define the range
+	this.fromRow = Math.min(fromRow, toRow);
+	this.fromCell = Math.min(fromCell, toCell);
+	this.toRow = Math.max(fromRow, toRow);
+	this.toCell = Math.max(fromCell, toCell);
+
+	// Cell exclusions
+	this.exclusions = [];
+};
+
+
+/**
+ * Returns whether a range contains a given cell
+ * @method contains
+ * @memberof Range
+ *
+ * @param	{integer}	row			- Row index
+ * @param	{integer}	cell		- Cell index
+ *
+ * @returns {boolean}
+ */
+Range.prototype.contains = function (row, cell) {
+	return row >= this.fromRow &&
+		row <= this.toRow && (
+			cell === undefined || cell === null || (
+				cell >= this.fromCell &&
+				cell <= this.toCell &&
+				!this.isExcludedCell(row, cell)
+			)
+		) && !this.isExcludedRow(row);
+};
+
+
+/**
+ * Deselects the range, or a specific cell in the range. Returns the Range object.
+ * @method deselect
+ * @memberof Range
+ *
+ * @param	{integer}	[row]		- Row index for cell to deselect
+ * @param	{integer}	[cell]	- Cell index to deselect in the given row
+ *
+ * @returns {object}
+ */
+Range.prototype.deselect = function (row, cell) {
+	var specific = row !== undefined && row !== null && cell !== undefined && cell !== null,
+		cache = this._grid.getCache();
+
+	// Make sure cell is part of range
+	if (specific && !this.contains(row, cell)) {
+		throw new Error('Unable to deselect cell (' + row + ', ' + cell + ') because it is not part of this Range.');
+	}
+
+	// If deselecting a specific cell -- add it to the exclusion list
+	if (specific) {
+		this.exclusions.push([row, cell]);
+	} else if (row !== undefined && row !== null) {
+		for (var c = 0, l = cache.activeColumns.length; c < l; c++) {
+			this.exclusions.push([row, c]);
+		}
+	}
+
+	// Get rows we want to deselect items
+	var selectedRows = [];
+	if (row === undefined || row === null) {
+		for (var j = this.fromRow; j <= this.toRow; j++) {
+			if (selectedRows.indexOf(j) < 0) selectedRows.push(j);
+		}
+	} else {
+		selectedRows.push(row);
+	}
+
+	// Build key/value object for classes we want to clear
+	var clear = {}, styles = {};
+
+	// If we have a specific cell to deselect, just do that one
+	if (cell !== undefined && cell !== null) {
+		clear[cache.activeColumns[cell].id] = this._grid.options.selectedClass;
+	} else {
+		for (var ic = 0, lc = cache.activeColumns.length; ic < lc; ic++) {
+			clear[cache.activeColumns[ic].id] = this._grid.options.selectedClass;
+		}
+	}
+
+	// Do the same for every row that we're clearing
+	for (var iw = 0, lw = selectedRows.length; iw < lw; iw++) {
+		styles[selectedRows[iw]] = clear;
+	}
+
+	// Update cell node styling
+	this._grid.updateCellCssStylesOnRenderedRows(null, styles);
+
+	return this;
+};
+
+
+/**
+ * Validates that all cells in the range are selectable, if not - adds them to the exclusions
+ * @method excludeUnselectable
+ * @memberof Range
+ */
+Range.prototype.excludeUnselectable = function () {
+	for (var row = this.fromRow; row <= this.toRow; row++) {
+		for (var cell = this.fromCell; cell <= this.toCell; cell++) {
+			if (!this._grid.canCellBeSelected(row, cell)) {
+				this.exclusions.push([row, cell]);
+			}
+		}
+	}
+};
+
+
+/**
+ * Returns whether the range is fully excluded
+ * @method fullyExcluded
+ * @memberof Range
+ *
+ * @returns {boolean}
+ */
+Range.prototype.fullyExcluded = function () {
+	for (var row = this.fromRow; row <= this.toRow; row++) {
+		for (var cell = this.fromCell; cell <= this.toCell; cell++) {
+			if (!this.isExcludedCell(row, cell)) return false;
+		}
+	}
+	return true;
+};
+
+
+/**
+ * Returns the number of cells in this selection range
+ * @method getCellCount
+ * @memberof Range
+ *
+ * @returns {integer}
+ */
+Range.prototype.getCellCount = function () {
+	var count = 0,
+		rownodes,
+		cache = this._grid.getCache();
+
+	for (var r = this.fromRow; r <= this.toRow; r++) {
+		rownodes = cache.nodes[r];
+		for (var c = this.fromCell; c <= this.toCell; c++) {
+			if (rownodes.cellColSpans.length && rownodes.cellColSpans[c]) {
+				count++;
+			}
+		}
+	}
+	return count;
+};
+
+
+/**
+ * Returns whether a cell is excluded in this range
+ * @method isExcludedCell
+ * @memberof Range
+ *
+ * @param	{integer}	row			- Row index for cell to check
+ * @param	{integer}	cell		- Cell index to check in the given row
+ */
+Range.prototype.isExcludedCell = function (row, cell) {
+	if (this.exclusions.length === 0) return false;
+	for (var i = 0, l = this.exclusions.length; i < l; i++) {
+		if (this.exclusions[i][0] === row && this.exclusions[i][1] === cell) return true;
+	}
+};
+
+
+/**
+ * Returns whether a row is excluded from this range
+ * @method isExcludedRow
+ * @memberof Range
+ *
+ * @param	{integer}	row			- Row index for row to check
+ */
+Range.prototype.isExcludedRow = function (row) {
+	if (this.exclusions.length === 0) return false;
+
+	var excludedColumns = [],
+		cache = this._grid.getCache();
+
+	for (var i = 0, l = this.exclusions.length; i < l; i++) {
+		if (this.exclusions[i][0] !== row) continue;
+		excludedColumns.push(this.exclusions[i]);
+	}
+	return (excludedColumns.length == cache.activeColumns.length);
+};
+
+
+/*
+ * Returns whether a range represents a single cell
+ * @method isSingleCell
+ * @memberof Range
+ *
+ * @returns {boolean}
+ */
+Range.prototype.isSingleCell = function () {
+	// TODO: This needs to take colspans into account
+	return this.fromRow == this.toRow && this.fromCell == this.toCell;
+};
+
+
+/**
+ * Returns whether a range represents a single row.
+ * @method isSingleRow
+ * @memberof Range
+ *
+ * @returns {boolean}
+ */
+Range.prototype.isSingleRow = function () {
+	return this.fromRow == this.toRow;
+};
+
+
+/**
+ * Converts the cell range values to CSV
+ * @method toCSV
+ * @memberof Range
+ *
+ * @returns {string}
+ */
+Range.prototype.toCSV = function () {
+	var json = this.toJSON(),
+		csv = [];
+	for (var i = 0, l = json.length; i < l; i++) {
+		csv.push('"' + json[i].join('","') + '"');
+	}
+	return csv.join('\n');
+};
+
+
+/**
+ * Converts the cell range values to JSON
+ * @method toJSON
+ * @memberof Range
+ *
+ * @returns {string}
+ */
+Range.prototype.toJSON = function () {
+	// TODO: Hacky solution to fix PhantomJS Jasmine tests. For some reason
+	// they will run this command on some tests after the grid has been destroyed.
+	if (this._grid.destroyed) return;
+
+	var json = [],
+		cache = this._grid.getCache(),
+		column, row, data;
+
+	for (var i = this.fromRow; i <= this.toRow; i++) {
+		row = cache.rows[i];
+
+		// Skip NonData rows
+		if (row instanceof NonDataItem) continue;
+
+		data = [];
+		for (var c = this.fromCell; c <= this.toCell; c++) {
+			// Replace excluded items with blanks
+			if (this.isExcludedCell(i, c)) {
+				data.push(null);
+			} else {
+				column = cache.activeColumns[c];
+				data.push(this._grid.getValueFromItem(row, column));
+			}
+		}
+		json.push(data);
+	}
+	return json;
+};
+
+
+/**
+ * Converts the cell range values to an HTML table
+ * @method toHTML
+ * @memberof Range
+ *
+ * @returns {string}
+ */
+Range.prototype.toHTML = function () {
+	var json = this.toJSON();
+
+	var rows = json.map(function (row) {
+		var columns = row.map(function (cell) {
+			return '\t\t<td>' + cell + '</td>';
+		});
+
+		return Array.prototype.concat('\t<tr>', columns, '\t</tr>').join('\n');
+	});
+
+	var html = Array.prototype.concat('<table>', rows, '</table>').join('\n');
+	return html;
+};
+
+
+/**
+ * Converts the cell range values to a list of selected row objects
+ * @method toRows
+ * @memberof Range
+ *
+ * @returns {string}
+ */
+Range.prototype.toRows = function () {
+	var result = [],
+		cache = this._grid.getCache();
+
+	for (var i = this.fromRow; i <= this.toRow; i++) {
+		if (!this.isExcludedRow(i)) result.push(cache.rows[i]);
+	}
+	return result;
+};
+
+
+/**
+ * Returns a readable representation of a range
+ * @method toString
+ * @memberof Range
+ *
+ * @returns {string}
+ */
+Range.prototype.toString = function () {
+	if (this.isSingleCell()) {
+		return "Range (" + this.fromRow + ":" + this.fromCell + ")";
+	} else {
+		return "Range (" + this.fromRow + ":" + this.fromCell + " - " + this.toRow + ":" + this.toCell + ")";
+	}
+};
+
+module.exports = Range;
+
+},{"./NonDataItem":7}],10:[function(require,module,exports){
+/* global $ */
+
+"use strict";
+
+var CLS = require('./../utils/classes'),
+	removeElement = require('./../utils/removeElement');
+
+/**
+ * Show a tooltip on the column header
+ * @method showTooltip
+ * @memberof DobyGrid
+ * @private
+ *
+ * @param	{object}	event		- Javascript event object
+ * @param	{object}	options		- Tooltip options
+ *
+ */
+var Tooltip = function (event, options) {
+	options = options || {};
+
+	// Proceed for popup tooltips only
+	if (options.type != 'popup') return;
+
+	// Proceed if not on a drag handle
+	if ($(event.target).closest('.' + CLS.handle).length) {
+		// Trigger mouseleave event so existing tooltips are hidden during resizing
+		$(event.target).trigger('mouseleave');
+		return;
+	}
+
+	var column = options.column;
+
+	// Proceed for valid columns only
+	if (!column || !column.tooltip) return;
+
+	var el = $(event.target).closest('.' + CLS.headercolumn);
+
+	// Don't create tooltip if this element already has one open
+	if (el.attr('aria-describedby')) return;
+
+	// ID of the tooltip element
+	var uid = "doby-grid-" + Math.round(1000000 * Math.random());
+	var tooltip_id = uid + '-tooltip-column-' + column.id;
+	var renderTimer;
+
+	// Add describe by
+	el.attr('aria-describedby', tooltip_id);
+
+	// Assign removal event
+	el.one("mouseleave remove", function () {
+		clearTimeout(renderTimer);
+
+		// Remove tooltip
+		if ($(this).attr('aria-describedby') !== undefined) {
+			var tltp = $('#' + tooltip_id);
+
+			tltp.removeClass('on');
+
+			// Animate out
+			setTimeout(function () {
+				if (tltp && tltp.length) removeElement(tltp[0]);
+			}, 200);
+
+			$(this).removeAttr('aria-describedby');
+		}
+	});
+
+	// Delay rendering by a few milliseconds to prevent rolling over tooltip
+	// and for better UX
+	renderTimer = setTimeout(function () {
+		// Make sure tooltip is still needed
+		if (el.attr('aria-describedby') === undefined || !el.is(':visible')) return;
+
+		// Height of the tooltip arrow
+		var arrowheight = 10;
+
+		// Build tooltip HTML
+		var html = ['<span class="' + CLS.tooltip + '" id="' + tooltip_id + '">'];
+		html.push(column.tooltip);
+		html.push('<span class="' + CLS.tooltiparrow + '"></span>');
+		html.push('</span>');
+
+		// Double check that element doesn't already exist
+		if ($('#' + tooltip_id).length) return;
+
+		// Insert into DOM temporarily so we can calculate size
+		var tooltip = $(html.join(''));
+		tooltip.appendTo(document.body);
+
+		// Calculate position
+		var x = el.offset().left + (el.outerWidth() / 2) - (tooltip.outerWidth() / 2),
+			y = el.offset().top + el.outerHeight() + arrowheight;
+
+		// Compensate when we get close to the edge
+		var arrowoffset = 0,
+			win = $(window),
+			windowwidth = win.outerWidth();
+
+		if (x < 0) {
+			arrowoffset = x;
+			x = 0;
+		} else if ((x + tooltip.outerWidth()) > windowwidth) {
+			arrowoffset = (x + tooltip.outerWidth()) - windowwidth;
+			x -= arrowoffset + 1;
+		}
+
+		// Position arrow
+		var arrow = tooltip.children('.' + CLS.tooltiparrow).first();
+		arrow.css('left', (tooltip.outerWidth() / 2) - (arrow.outerWidth() / 2) + arrowoffset);
+
+		// Draw tooltip
+		tooltip
+			.remove()	// Need to remove it from body and re-insert to ensure Chrome animates
+			.addClass('on')
+			.attr('style', 'left:' + x + 'px;top:' + (y + 5) + 'px')
+			.appendTo(document.body)
+			.width(); // Force layout to display transitions
+
+		// Transition in
+		tooltip.css('top', y);
+	}, 250);
+};
+
+module.exports = Tooltip;
+},{"./../utils/classes":12,"./../utils/removeElement":14}],11:[function(require,module,exports){
 // doby-grid.js
 // (c) 2014 Evgueni Naverniouk, Globex Designs, Inc.
 // Doby may be freely distributed under the MIT license.
@@ -30,7 +1274,6 @@ var Aggregate			= require('./classes/Aggregate'),
 	Tooltip				= require('./classes/Tooltip'),
 
 	CLS					= require('./utils/classes'),
-	Locales				= require('./utils/locales'),
 	naturalSort			= require('./utils/naturalSort'),
 	removeElement 		= require('./utils/removeElement');
 
@@ -49,7 +1292,7 @@ var DobyGrid = function (options) {
 	this.NAME = 'doby-grid';
 
 	// Current version of the library
-	this.VERSION = '0.1.2';
+	this.VERSION = '0.1.1';
 
 	// Ensure options are an object
 	if (typeof options !== "object" || $.isArray(options)) {
@@ -63,23 +1306,13 @@ var DobyGrid = function (options) {
 	var self = this,
 		$canvas,
 		$headers,
-		$headerL,
-		$headerR,
 		$headerFilter,
-		$headerFilterL,
-		$headerFilterR,
 		$headerScroller,
-		$headerScrollerL,
-		$headerScrollerR,
 		$overlay,
-		$panes,
 		$style,
 		$viewport,
-		$viewportScrollContainerX,
-		$viewportScrollContainerY,
 		absoluteColumnMinWidth,
 		activePosX,
-		actualFrozenRow = -1,
 		applyColumnHeaderWidths,
 		applyColumnWidths,
 		applyHeaderAndColumnWidths,
@@ -105,8 +1338,6 @@ var DobyGrid = function (options) {
 		calculateVisibleRows,
 		canCellBeActive,
 		canvasWidth,
-		canvasWidthL,
-		canvasWidthR,
 		cellExists,
 		cellHeightDiff = 0,
 		cellWidthDiff = 0,
@@ -135,7 +1366,6 @@ var DobyGrid = function (options) {
 		findLastFocusableCell,
 		fitColumnToHeader,
 		fitColumnsToHeader,
-		frozenRowsHeight = 0,
 		generatePlaceholders,
 		getActiveCell,
 		getBrowserData,
@@ -167,7 +1397,6 @@ var DobyGrid = function (options) {
 		getTotalHeight,
 		getVBoxDelta,
 		getViewportHeight,
-		getViewportWidth,
 		getVisibleRange,
 		gotoCell,
 		gotoDown,
@@ -187,11 +1416,8 @@ var DobyGrid = function (options) {
 		handleHeaderContextMenu,
 		handleHeaderClick,
 		handleKeyDown,
-		handleKeyDownRowBased,
-		handleNavigateKey,
 		handleScroll,
 		handleWindowResize,
-		hasFrozenRows = false,
 		hasGrouping,
 		hasSorting,
 		headerColumnWidthDiff = 0,
@@ -261,9 +1487,7 @@ var DobyGrid = function (options) {
 		scrollTop = 0,
 		serializedEditorValue,
 		setActiveCellInternal,
-		setFrozenOptions,
 		setRowHeight,
-		setScroller,
 		setupColumnReorder,
 		setupColumnResize,
 		setupColumnSort,
@@ -296,7 +1520,55 @@ var DobyGrid = function (options) {
 
 	// A recursive extend for locale options.
 	options.locale = options.locale || {};
-	options.locale = $.extend(true, Locales, options.locale);
+	options.locale = $.extend(true, {
+		column: {
+			add_group:			'Add Grouping By "{{name}}"',
+			add_sort_asc:		'Add Sort By "{{name}}" (Ascending)',
+			add_sort_desc:		'Add Sort By "{{name}}" (Descending)',
+			add_quick_filter:	'Add Quick Filter...',
+			aggregators:		'Aggregators',
+			filter:				'Quick Filter by "{{name}}"',
+			filtering:			'Filtering',
+			group:				'Group By "{{name}}"',
+			grouping:			'Grouping',
+			groups_clear:		'Clear All Grouping',
+			groups_collapse:	'Collapse All Groups',
+			groups_expand:		'Expand All Groups',
+			options:			'Column Options',
+			remove:				'Remove "{{name}}" Column',
+			remove_group:		'Remove Grouping By "{{name}}"',
+			remove_sort:		'Remove Sort By "{{name}}"',
+			sorting:			'Sorting',
+			sort_asc:			'Sort By "{{name}}" (Ascending)',
+			sort_desc:			'Sort By "{{name}}" (Descending)'
+		},
+		empty: {
+			"default":			'No data available',
+			remote:				'No results found',
+			filter:				'No items matching that filter'
+		},
+		global: {
+			auto_width:			'Automatically Resize Columns',
+			columns:			'Columns',
+			export:				'Export',
+			export_csv:			'Export Table to CSV',
+			export_html:		'Export Table to HTML',
+			export_group_csv:	'Export Group to CSV',
+			export_group_html:	'Export Group to HTML',
+			extensions:			'Extensions',
+			grid_options:		'Grid Options',
+			hide_filter:		'Hide Quick Filter'
+		},
+		selection: {
+			deselect_all:		'Deselect All',
+			deselect_cell:		'Deselect This Cell',
+			deselect_column:	'Deselect "{{name}}" Column',
+			selection:			'Selection',
+			select_all:			'Select All',
+			select_cell:		'Select This Cell',
+			select_column:		'Select "{{name}}" Column'
+		}
+	}, options.locale);
 
 	// But simple extend for these options
 	// We can't make all options recursively extended because options.data could
@@ -332,13 +1604,9 @@ var DobyGrid = function (options) {
 		fetchCollapsed:			false,
 		forceRemoteSort:		false,
 		formatter:				null,
-		frozenBottom:			false,
-		frozenColumns:			-1,
-		frozenRows:				-1,
 		fullWidthRows:			true,
 		groupable:				true,
 		idProperty:				"id",
-			infinitePageSize:		35,
 		keepNullsAtBottom:		true,
 		keyboardNavigation:		true,
 		lineHeightOffset:		-1,
@@ -347,7 +1615,6 @@ var DobyGrid = function (options) {
 		menuExtensionsPosition:	"bottom",
 		minColumnWidth:			"",
 		multiColumnSort:		true,
-		paginationStyle:		"default",
 		quickFilter:			false,
 		remoteScrollTime:		200,
 		resizableColumns:		true,
@@ -362,10 +1629,8 @@ var DobyGrid = function (options) {
 		scrollLoader:			null,
 		selectable:				true,
 		selectedClass:			"selected",
-			selectOnNavigate:		false,
 		shiftSelect:			true,
 		showHeader:				true,
-			showSortIndicator:		true,
 		stickyFocus:			false,
 		stickyGroupRows:		false,
 		tooltipType:			"popup",
@@ -603,8 +1868,7 @@ var DobyGrid = function (options) {
 			measureCellPadding();
 			if (this.options.showHeader) disableSelection($headers);
 			renderColumnHeaders();
-			setFrozenOptions();
-			setScroller();
+			setupColumnSort();
 			createCssRules();
 			cacheRows();
 			resizeCanvas(true);
@@ -668,12 +1932,10 @@ var DobyGrid = function (options) {
 			$(document.body).on("click contextmenu", handleBodyClick);
 
 			$canvas
-				.on("keydown", self.options.rowBasedSelection ? handleKeyDownRowBased : handleKeyDown)
+				.on("keydown", handleKeyDown)
 				.on("click", handleClick)
 				.on("dblclick", handleDblClick)
 				.on("contextmenu", handleContextMenu);
-
-			setupColumnSort();
 
 			// Pass through common mouseevents
 			var evs = [
@@ -698,7 +1960,7 @@ var DobyGrid = function (options) {
 
 				// Focus on the canvas when the mouse is in it.
 				// Only as long as the Quick Filter isn't focused.
-					if (event.type == 'mouseup' && self.options.canvasFocus) {
+				if (event.type == 'mouseenter' && self.options.canvasFocus) {
 					var ae = document.activeElement;
 					if (ae != this && !$(this).has($(ae)).length && (
 						(self.options.quickFilter && !$(ae).closest('.' + CLS.headerfiltercell).length) ||
@@ -707,18 +1969,13 @@ var DobyGrid = function (options) {
 
 						// Prevent page from scrolling when the grid is focused.
 						// Remember previous scroll position.
-						var prevScroll = [$viewport.scrollLeft(), $viewport.scrollTop()];
+						var prevScroll = [window.scrollX, window.scrollY];
+
 						// This will un-necessarily scroll the page
 						$(this).focus();
 
 						// Restore scroll
-						if ($viewport.scrollLeft() != prevScroll[0]) {
-							$viewport.scrollLeft(prevScroll[0]);
-						}
-
-						if ($viewport.scrollTop() != prevScroll[1]) {
-							$viewport.scrollTop(prevScroll[1]);
-						}
+						window.scrollTo(prevScroll[0], prevScroll[1]);
 					}
 				}
 
@@ -727,6 +1984,7 @@ var DobyGrid = function (options) {
 			for (var i = 0, l = evs.length; i < l; i++) {
 				$canvas.on(evs[i], evHandler);
 			}
+
 
 			// Enable resizable rows
 			if (this.options.resizableRows) {
@@ -796,7 +2054,7 @@ var DobyGrid = function (options) {
 	 */
 	applyColumnWidths = function () {
 		// The -1 here is to compensate for the border spacing between cells
-		var x = -1, c, w, rule, i, l, r, isRightmostColumn;
+		var x = -1, c, w, rule, i, l, r;
 
 		// If scrollbar is on the left - we need to add a spacer
 		if ($headers) {
@@ -816,27 +2074,18 @@ var DobyGrid = function (options) {
 
 			// Right
 			// The -2 here is to compensate for the border spacing between cells
-			r = (self.options.frozenColumns != -1 && i > self.options.frozenColumns ? canvasWidthR : canvasWidthL) - x - w - 2;
+			r = canvasWidth - x - w - 2;
 
-			// Determine if this column is the right-most in its pane
-			isRightmostColumn = (i + 1 === l) || (self.options.frozenColumns != -1 && i === self.options.frozenColumns);
-
-			// If this is the rightmost column, and there is no vertical scrollbar, then
+			// If this is the last column, and there is no vertical scrollbar, and
 			// do not allow negative spacing on the right otherwise we get a gap
-			if (!viewportHasVScroll && self.options.scrollbarPosition === 'right' && isRightmostColumn && r < 0) {
+			if (!viewportHasVScroll && self.options.scrollbarPosition === 'right' && i + 1 === l && r < 0) {
 				r = 0;
 			}
 
 			rule.right.style.right = r + "px";
 
-			// Reset the css left value since the
-			// column starts in a new viewport
-			if (self.options.frozenColumns == i) {
-				x = -1;
-			} else {
-				// The +1 here is to compensate for the border spacing between cells
-				x += c.width + 1;
-			}
+			// The +1 here is to compensate for the border spacing between cells
+			x += c.width + 1;
 		}
 	};
 
@@ -898,8 +2147,7 @@ var DobyGrid = function (options) {
 				// If row has no caching set -- run the postprocessing
 				if (postprocess && !cache.postprocess[rowdata[self.options.idProperty]][col.id]) {
 					var node = cacheEntry.cellNodesByColumnIdx[columnIdx];
-					if (node && node.length) {
-						node = node[0];
+					if (node) {
 						postprocess({
 							$cell: $(node),
 							column: col,
@@ -1027,7 +2275,7 @@ var DobyGrid = function (options) {
 	 * @private
 	 */
 	bindCellRangeSelect = function () {
-		var decorator = new CellRangeDecorator(self, getCellNodeBox),
+		var decorator = new CellRangeDecorator($canvas, getCellNodeBox),
 			_dragging = null,
 			handleSelector = function () {
 				return $(this).closest('.' + CLS.cellunselectable).length > 0;
@@ -1053,10 +2301,8 @@ var DobyGrid = function (options) {
 
 				if (!_dragging) return;
 
-				var $closestPane = $(this).closest($panes);
-
 				var start = getCellFromPoint(
-					dd.startX - $(this).offset().left + $closestPane.position().left,
+					dd.startX - $(this).offset().left,
 					dd.startY - $(this).offset().top
 				);
 
@@ -1073,20 +2319,9 @@ var DobyGrid = function (options) {
 
 				event.stopImmediatePropagation();
 
-				var $closestPane = $(this).closest($panes),
-					xPos = event.pageX - $(this).offset().left,
-					xOffset = $closestPane.position().left;
-
-				// If started dragging in left pane but ending in right, need to account
-				// for right pane scrolling
-				if (dd._range.start.cell <= self.options.frozenColumns && xPos > $viewport.eq(0).width()) {
-					xOffset += $viewport.eq(1)[0].scrollLeft;
-				}
-
 				var end = getCellFromPoint(
-					xPos + xOffset,
-					event.pageY - $(this).offset().top
-				);
+					event.pageX - $(this).offset().left,
+					event.pageY - $(this).offset().top);
 
 				if (!self.canCellBeSelected(end.row, end.cell)) return;
 
@@ -1783,6 +3018,7 @@ var DobyGrid = function (options) {
 	 * @returns {object}
 	 */
 	createGrid = function () {
+
 		// Create the container
 		var cclasses = [self.NAME];
 		if (self.options.class) cclasses.push(self.options.class);
@@ -1790,58 +3026,26 @@ var DobyGrid = function (options) {
 
 		self.$el = $('<div class="' + cclasses.join(' ') + '" id="' + uid + '"></div>');
 
-		// Create pane elements
-		var panes = ['top-left', 'top-right', 'bottom-left', 'bottom-right'], $p, $v, $c;
-
-		$panes = $();
-		$viewport = $();
-		$canvas = $();
-
-		for (var i = 0, l = panes.length; i < l; i++) {
-			// Generate panes
-			$p = $([
-				'<div class="', CLS.pane,
-				' ', CLS.pane, '-', panes[i],
-				'"></div>'
-			].join('')).appendTo(self.$el);
-
-			// Generate viewport containers
-			$v = $([
-				'<div class="', CLS.viewport,
-				(self.options.autoHeight ? ' ' + CLS.autoheight : ''),
-				(self.options.frozenColumns > -1 && i % 2 === 0 ? ' ' + CLS.autoheight : ''),
-				'"></div>'
-			].join('')).appendTo($p);
-
-			// Generate canvas
-			// The tabindex here ensures we can focus on this element
-			// otherwise we can't assign keyboard events
-			$c = $('<div class="' + CLS.canvas + '" tabindex="0"></div>').appendTo($v);
-
-			$panes = $panes.add($p);
-			$viewport = $viewport.add($v);
-			$canvas = $canvas.add($c);
-		}
-
-		// Create header elements
+		// Create the global grid elements
 		if (self.options.showHeader) {
-			$headerScrollerL = $('<div class="' + CLS.header + '"></div>');
-			$panes.eq(0).prepend($headerScrollerL);
-			$headerScrollerR = $('<div class="' + CLS.header + '"></div>');
-			$panes.eq(1).prepend($headerScrollerR);
+			$headerScroller = $('<div class="' + CLS.header + '"></div>')
+					.appendTo(self.$el);
 
-			$headerScroller = $().add($headerScrollerL).add($headerScrollerR);
-
-			$headerL = $('<div class="' + CLS.headercolumns + '"></div>')
-				.appendTo($headerScrollerL)
+			$headers = $('<div class="' + CLS.headercolumns + '"></div>')
+				.appendTo($headerScroller)
 				.width(getHeadersWidth());
-
-			$headerR = $('<div class="' + CLS.headercolumns + '"></div>')
-				.appendTo($headerScrollerR)
-				.width(getHeadersWidth());
-
-			$headers = $().add($headerL).add($headerR);
 		}
+
+		$viewport = $([
+			'<div class="', CLS.viewport,
+			(self.options.autoHeight ? ' ' + CLS.autoheight : ''),
+			'"></div>'
+		].join('')).appendTo(self.$el);
+
+		// The tabindex here ensures we can focus on this element
+		// otherwise we can't assign keyboard events
+		$canvas = $('<div class="' + CLS.canvas + '" tabindex="0"></div>').appendTo($viewport);
+
 	};
 
 
@@ -2197,17 +3401,11 @@ var DobyGrid = function (options) {
 			var cacheEntry = cache.nodes[row];
 			if (cacheEntry) {
 				if (cacheEntry.cellRenderQueue.length) {
-					var $lastNode = $(cacheEntry.rowNode).children('.' + CLS.cell + '').last();
+					var lastChild = $(cacheEntry.rowNode).children('.' + CLS.cell + '').last()[0];
 					while (cacheEntry.cellRenderQueue.length) {
 						var columnIdx = cacheEntry.cellRenderQueue.pop();
-						cacheEntry.cellNodesByColumnIdx[columnIdx] = $lastNode;
-						$lastNode = $lastNode.prev();
-
-						// Hack to retrieve the frozen columns
-						// TODO: Find out why this is needed. It was copied from jlynch.
-						if ($lastNode.length === 0) {
-							$lastNode = $(cacheEntry.rowNode[0]).children().last();
-						}
+						cacheEntry.cellNodesByColumnIdx[columnIdx] = lastChild;
+						lastChild = lastChild.previousSibling;
 					}
 				}
 			}
@@ -2569,12 +3767,7 @@ var DobyGrid = function (options) {
 			}
 
 			var result = cache.modelsById[id];
-				var idx = this.items.indexOf(result);
-				if (result && result.id === obj.id && idx < 0) {
-					result = null;
-					delete cache.modelsById[id];
-				}
-				return result ? [idx, result] : null;
+			return result ? [this.items.indexOf(result), result] : null;
 		};
 
 
@@ -3008,6 +4201,7 @@ var DobyGrid = function (options) {
 			if (initialized && grid.options.autoHeight) {
 				grid.resize();
 			}
+
 		};
 
 
@@ -3323,9 +4517,7 @@ var DobyGrid = function (options) {
 			// TODO: This only needs to re-index ID, not recalculate positions.
 			// Maybe update cacheRows to support different modes?
 			cacheRows(null, true);
-
-			// Debouncing here ensures aggregators are not duplicated. See Issue #113.
-			this.refreshDebounced();
+			this.refresh();
 		};
 
 
@@ -3454,7 +4646,7 @@ var DobyGrid = function (options) {
 		deselectCells(rowIndex);
 		var rowNode = cache.nodes[rowIndex] ? cache.nodes[rowIndex].rowNode : null;
 		if (rowNode) {
-			$(rowNode).removeClass(self.options.selectedClass);
+			$(rowNode).addClass(self.options.selectedClass);
 		}
 	};
 
@@ -3520,9 +4712,8 @@ var DobyGrid = function (options) {
 		}
 
 		// Forcefully destroy all cached elements -- another DOM leak prevention
-		var rowClear = function () { removeElement(this); };
 		for (var row in cache.nodes) {
-			cache.nodes[row].rowNode.each(rowClear);
+			removeElement(cache.nodes[row].rowNode);
 		}
 
 		// Clear collection items (they may be a Remote Objects)
@@ -3566,16 +4757,6 @@ var DobyGrid = function (options) {
 		}
 	};
 
-	/**
-	 * Edit the currently active cell (if the table, the column, and the item is editable)
-	 * @method editActiveCell
-	 * @memberof DobyGrid
-	 *
-	 * @param	{function}	editor		- Editor factory to use
-	 */
-	this.editActiveCell = function (editor) {
-		makeActiveCellEditable(editor);
-	};
 
 	/**
 	 * Given a set of columns, make sure 'minWidth <= width <= maxWidth
@@ -3615,13 +4796,8 @@ var DobyGrid = function (options) {
 			// the grid correctly refetches the full page of results.
 			self.collection.length = self.collection.remote_length;
 
-				// When using infinite pagination style, no placeholders are needed
-				if (self.options.paginationStyle === "infinite") {
-					self.options.data.reset([]);
-				} else {
-					// Refill the collection with placeholders
-					generatePlaceholders();
-				}
+			// Refill the collection with placeholders
+			generatePlaceholders();
 
 			// Refresh the grid to recalculate the cache for placeholder rows
 			self.collection.refresh();
@@ -3904,7 +5080,6 @@ var DobyGrid = function (options) {
 			// Only re-fetch if the grid is initialized, otherwise we're wasting an AJAX call
 			if (initialized) this.refetch();
 		} else {
-			// Ensure aggregators are reset before changing filter values
 			resetAggregators();
 
 			// Refresh the grid with the filtered data
@@ -4170,35 +5345,16 @@ var DobyGrid = function (options) {
 	 */
 	getCanvasWidth = function () {
 		var availableWidth = viewportW - (viewportHasVScroll ? window.scrollbarDimensions.width : 0),
-			colWidth, i, l;
-
-		canvasWidthL = canvasWidthR = 0;
+			rowWidth = 0, i, l;
 
 		for (i = 0, l = cache.activeColumns.length; i < l; i++) {
 			// The 2 here is to compensate for the spacing between columns
-			colWidth = cache.activeColumns[i].width - self.options.columnSpacing + 2;
-
-			if ((self.options.frozenColumns > -1) && (i > self.options.frozenColumns)) {
-				canvasWidthR += colWidth;
-			} else {
-				canvasWidthL += colWidth;
-			}
+			rowWidth += cache.activeColumns[i].width - self.options.columnSpacing + (self.options.fullWidthRows ? 2 : 0);
 		}
 
-		// When fullWidthRows is disabled - keep canvas as big as the data only
-		var totalRowWidth = canvasWidthL + canvasWidthR;
-		var result = self.options.fullWidthRows ? Math.max(totalRowWidth, availableWidth) : (totalRowWidth + l * 2);
+		// When fullWidthRows disable - keep canvas as big as the dat only
+		var result = self.options.fullWidthRows ? Math.max(rowWidth, availableWidth) : (rowWidth + l * 2);
 
-		// Handle fullWidthRows correctly when frozenColumns are enabled
-		if (self.options.fullWidthRows) {
-			if (self.options.frozenColumns > -1) {
-				canvasWidthR = result - canvasWidthL;
-			} else {
-				canvasWidthL = result;
-			}
-		}
-
-		// Support for left-side scrollbar
 		if (self.options.scrollbarPosition == 'left') result--;
 
 		return result;
@@ -4219,7 +5375,7 @@ var DobyGrid = function (options) {
 		// read column number from .l<columnNumber> CSS class
 		var cls = /l\d+/.exec(cellNode.className);
 		if (!cls) {
-			throw new Error("getCellFromNode: cannot get cell - " + cellNode.className);
+			throw "getCellFromNode: cannot get cell - " + cellNode.className;
 		}
 		return parseInt(cls[0].substr(1, cls[0].length - 1), 10);
 	};
@@ -4283,7 +5439,7 @@ var DobyGrid = function (options) {
 			// Do not allow negative values
 			nodecell = nodecell < 0 ? 0 : nodecell;
 
-			return cache.nodes[row].cellNodesByColumnIdx[nodecell][0];
+			return cache.nodes[row].cellNodesByColumnIdx[nodecell];
 		}
 		return null;
 	};
@@ -4315,9 +5471,7 @@ var DobyGrid = function (options) {
 		var x1 = -1;
 
 		for (var i = 0; i < cell; i++) {
-			if (self.options.frozenColumns === -1 || i > self.options.frozenColumns) {
-				x1 += cache.activeColumns[i].width + 1;
-			}
+			x1 += cache.activeColumns[i].width + 1;
 		}
 
 		var x2 = x1 + cache.activeColumns[cell].width + 2;
@@ -4343,11 +5497,10 @@ var DobyGrid = function (options) {
 	 */
 	getCellFromEvent = function (e) {
 		var $cell = $(e.target).closest("." + CLS.cell, $canvas);
-
 		if (!$cell.length) return null;
 
-		var row = getRowFromNode($cell[0].parentNode),
-			cell = getCellFromNode($cell[0]);
+		var row = getRowFromNode($cell[0].parentNode);
+		var cell = getCellFromNode($cell[0]);
 
 		if (row === null || cell === null) {
 			return null;
@@ -4864,7 +6017,7 @@ var DobyGrid = function (options) {
 	 *
 	 * @return {object}
 	 */
-		getRenderedRange = this.getRenderedRange = function (viewportTop, viewportLeft) {
+	getRenderedRange = function (viewportTop, viewportLeft) {
 		var range = getVisibleRange(viewportTop, viewportLeft),
 			buffer,
 			minBuffer = 3;
@@ -4941,7 +6094,7 @@ var DobyGrid = function (options) {
 	 */
 	getRowFromNode = function (rowNode) {
 		for (var row in cache.nodes) {
-			if (cache.nodes[row].rowNode.is(rowNode)) {
+			if (cache.nodes[row].rowNode === rowNode) {
 				return row | 0;
 			}
 		}
@@ -5172,7 +6325,7 @@ var DobyGrid = function (options) {
 	/**
 	 * Calculates the height of the current viewport
 	 * @method getViewportHeight
-	 * @memberof DobyGrid
+	 * @memberof DobyGRid
 	 * @private
 	 *
 	 * @returns {integer}
@@ -5180,19 +6333,6 @@ var DobyGrid = function (options) {
 	getViewportHeight = function () {
 		// TODO: Find out why the extra 1 is needed.
 		return Math.max(self.$el.height() - (self.options.showHeader ? $headerScroller.outerHeight() - getVBoxDelta($headerScroller) : 0) - 1, 0);
-	};
-
-
-	/**
-	 * Calculates the width of the current viewport
-	 * @method getViewportWidth
-	 * @memberof DobyGrid
-	 * @private
-	 *
-	 * @returns {float}
-	 */
-	getViewportWidth = function () {
-		return parseFloat($.css(self.$el[0], "width", true));
 	};
 
 
@@ -5207,7 +6347,7 @@ var DobyGrid = function (options) {
 	 *
 	 * @returns {object}
 	 */
-		getVisibleRange = this.getVisibleRange = function (viewportTop, viewportLeft) {
+	getVisibleRange = function (viewportTop, viewportLeft) {
 		if (viewportTop === undefined || viewportTop === null) viewportTop = scrollTop;
 		if (viewportLeft === undefined || viewportLeft === null) viewportLeft = scrollLeft;
 
@@ -5804,7 +6944,7 @@ var DobyGrid = function (options) {
 						makeActiveCellNormal();
 
 						// Return focus back to the canvas
-						$canvas.eq(0).focus();
+						$canvas.focus();
 						handled = true;
 					} else if (self.selection) {
 						// If something is selected remove the selection range
@@ -5919,190 +7059,6 @@ var DobyGrid = function (options) {
 
 
 	/**
-		 * Handle the keydown events for the row based selection model.
-		 * @method handleKeyDownRowBased
-		 * @memberof DobyGrid
-		 *
-		 * @param	{object}	event		- Javascript event object
-		*/
-		// TODO: Maybe code duplication between this method and handleKeyDown can further be reduced
-		handleKeyDownRowBased = function (event) {
-
-			if (self.active) {
-				self.trigger('keydown', event, {
-					row: self.active.row,
-					cell: self.active.cell
-				});
-			}
-
-			var handled = event.isImmediatePropagationStopped(),
-				shiftUsed = event.shiftKey;
-
-			var newestRange = self.selection && self.selection[self.selection.length - 1];
-
-			var reselectRow = function (up) {
-				if (! self.options.selectOnNavigate) return;
-				var row = self.active && self.active.row;
-				if (row !== null && typeof row !== "undefined") {
-					deselectCells();
-					if (shiftUsed && newestRange) {
-						if (row < newestRange.fromRow) {
-							self.selectRows(row, newestRange.toRow, true);
-						} else if (row > newestRange.toRow) {
-							self.selectRows(newestRange.fromRow, row, true);
-						} else {
-							if (up) {
-								self.selectRows(newestRange.fromRow, row, true);
-							} else {
-								self.selectRows(row, newestRange.toRow, true);
-							}
-						}
-					} else {
-						self.selectRows(row, row, true);
-					}
-				} else {
-					self.selectRows(0, 0, true);
-					setActiveCellInternal(getCellNode(0, 0), false);
-				}
-			};
-
-			this._event = event;
-
-			switch (event.which) {
-			// Down arrow
-			case 40 :
-				handled = handleNavigateKey(function () {
-					navigate("down");
-					reselectRow();
-					return true;
-				});
-				break;
-			// Up Arrow
-			case 38 :
-				handled = handleNavigateKey(function () {
-					navigate("up");
-					reselectRow(true);
-					return true;
-				});
-				break;
-			// TAB
-			case 9 :
-				handled = handleNavigateKey(function () {
-					if (shiftUsed) {
-						shiftUsed = false;
-						navigate("up");
-						reselectRow(true);
-					} else {
-						navigate("down");
-						reselectRow();
-					}
-					return true;
-				});
-				break;
-			case 13 :
-				if (self.options.editable && self.currentEditor) {
-					handled = commitCurrentEdit(function (result) {
-						if (result) {
-							navigate("down");
-							reselectRow();
-						}
-					});
-				}
-				break;
-			// Left arrow
-			case 37 :
-				if (!self.options.editable || !self.currentEditor) {
-					handled = handleNavigateKey(function () {
-						return navigate("left");
-					});
-				}
-				break;
-			// Right Arrow
-			case 39 :
-				if (!self.options.editable || !self.currentEditor) {
-					handled = handleNavigateKey(function () {
-						return navigate("right");
-					});
-				}
-				break;
-			// Page Down
-			case 34 :
-				scrollPage(1);
-				handled = true;
-				break;
-			// Page Up
-			case 33 :
-				scrollPage(-1);
-				handled = true;
-				break;
-			// Home
-			case 36 :
-				self.scrollToRow(0);
-				handled = true;
-				break;
-			// END
-			case 35 :
-				self.scrollToRow(self.collection.items.length - 1);
-				handled = true;
-				break;
-			// ESC
-			case 27 :
-				if (self.options.editable && self.currentEditor) {
-					self.currentEditor.cancel();
-					makeActiveCellNormal();
-
-					// Return focus back to the canvas
-					$canvas.focus();
-					handled = true;
-				} else if (self.selection) {
-					// If something is selected remove the selection range
-					deselectCells();
-				} else if (self.active) {
-					// If something is active - remove the active state
-					self.activate();
-				}
-				break;
-			}
-
-			this._event = null;
-
-			if (handled) {
-				// the event has been handled so don't let parent element
-				// (bubbling/propagation) or browser (default) handle it
-				event.stopPropagation();
-				event.preventDefault();
-
-				try {
-					// prevent default behaviour for special keys in IE browsers (F3, F5, etc.)
-					event.originalEvent.which = 0;
-				}
-				// ignore exceptions - setting the original event's keycode
-				// throws access denied exception for "Ctrl" (hitting control key only,
-				// nothing else), "Shift" (maybe others)
-				catch (error) {}
-			}
-		};
-
-		/**
-		* Helper function to handle events which involve cell navigation
-		* @method handleNavigateKey
-		* @memberof DobyGrid
-		*
-		* @param {function} callback	- function to execute when edit has been commited
-		*/
-		// TODO this function can also reduce code duplication in handleKeyDown function
-		handleNavigateKey = function (callback) {
-			if (self.options.editable && self.currentEditor) {
-				return commitCurrentEdit(function (result) {
-					if (result) callback();
-				});
-			} else {
-				return callback();
-			}
-		};
-
-
-		/**
 	 * Handles the offsets and event that need to fire when a user is scrolling
 	 * @method handleScroll
 	 * @memberof DobyGrid
@@ -6113,8 +7069,8 @@ var DobyGrid = function (options) {
 	handleScroll = function (event) {
 		if (event === undefined) event = null;
 
-		scrollTop = $viewportScrollContainerY[0].scrollTop;
-		scrollLeft = $viewportScrollContainerX[0].scrollLeft;
+		scrollTop = $viewport[0].scrollTop;
+		scrollLeft = $viewport[0].scrollLeft;
 
 		var scrollTopDelta = Math.abs(scrollTop - prevScrollTop),
 			scrollLeftDelta = Math.abs(scrollLeft - prevScrollLeft);
@@ -6122,30 +7078,13 @@ var DobyGrid = function (options) {
 		// Horizontal Scroll
 		if (scrollLeftDelta) {
 			prevScrollLeft = scrollLeft;
-
-			// Scroll the header
-			if (self.options.showHeader) {
-				if (self.options.frozenColumns > -1) {
-					$headerScroller[1].scrollLeft = scrollLeft;
-				} else {
-					$headerScroller[0].scrollLeft = scrollLeft;
-				}
-			}
+			if (self.options.showHeader) $headerScroller[0].scrollLeft = scrollLeft;
 		}
 
 		// Vertical Scroll
 		if (scrollTopDelta) {
 			vScrollDir = prevScrollTop < scrollTop ? 1 : -1;
 			prevScrollTop = scrollTop;
-
-			// Ensure scrolling affects the appropriate frozen panel
-			if (self.options.frozenColumns > -1) {
-				if (hasFrozenRows && !self.options.frozenBottom) {
-					$viewport.eq(2)[0].scrollTop = scrollTop;
-				} else {
-					$viewport.eq(0)[0].scrollTop = scrollTop;
-				}
-			}
 
 			// Switch virtual pages if needed
 			if (scrollTopDelta < viewportH) {
@@ -6326,11 +7265,11 @@ var DobyGrid = function (options) {
 			$overlay = null;
 
 			// Reset canvas width
-			//updateCanvasWidth();
-		}
+			updateCanvasWidth();
 
-		// Redraw grid
-		invalidate();
+			// Redraw grid
+			invalidate();
+		}
 
 		return this;
 	};
@@ -6551,7 +7490,6 @@ var DobyGrid = function (options) {
 	// up common Collection events to the grid.
 	//
 	bindToCollection = function () {
-			self.stopListening(self.options.data);
 		self.listenTo(self.options.data, 'add', function (model, collection, options) {
 			// If grid is destroyed by the time we get here - leave
 			if (self.destroyed) return;
@@ -6690,10 +7628,14 @@ var DobyGrid = function (options) {
 
 		if (!self.currentEditor) return;
 
+		/*self.trigger('onBeforeCellEditorDestroy', {}, {
+			editor: self.currentEditor
+		});*/
+
 		// When an editor is destroyed, the input element loses focus and focus is given back
 		// to the 'body' element. To retain focus on the grid - we need to manually set it here first.
 		if (self.currentEditor.$input.is(document.activeElement)) {
-			$canvas.eq(0).focus();
+			$canvas.focus();
 		}
 
 		self.currentEditor.destroy();
@@ -6726,7 +7668,7 @@ var DobyGrid = function (options) {
 
 		if (self.options.showHeader) {
 			el = $('<div class="' + CLS.headercolumn + '" style="visibility:hidden">-</div>')
-				.appendTo($headerL);
+				.appendTo($headers);
 
 			headerColumnWidthDiff = headerColumnHeightDiff = 0;
 
@@ -6745,7 +7687,7 @@ var DobyGrid = function (options) {
 			removeElement(el[0]);
 		}
 
-		var r = $('<div class="' + CLS.row + '"></div>').appendTo($canvas[0]);
+		var r = $('<div class="' + CLS.row + '"></div>').appendTo($canvas);
 		el = $('<div class="' + CLS.cell + '" style="visibility:hidden">-</div>').appendTo(r);
 		cellWidthDiff = cellHeightDiff = 0;
 
@@ -6761,7 +7703,6 @@ var DobyGrid = function (options) {
 				cellHeightDiff += parseFloat(el.css(val)) || 0;
 			});
 		}
-
 		removeElement(r[0]);
 
 		absoluteColumnMinWidth = Math.max(headerColumnWidthDiff, cellWidthDiff);
@@ -6955,10 +7896,6 @@ var DobyGrid = function (options) {
 	 * @private
 	 */
 	remoteAllLoaded = function () {
-
-			// If the pagination style is infinite we won't ever load all items
-			if (self.options.paginationStyle === "infinite") return false;
-
 		// Do we have any placeholders?
 		for (var i = 0, l = self.collection.items.length; i < l; i++) {
 			if (self.collection.items[i].__placeholder) {
@@ -6986,19 +7923,6 @@ var DobyGrid = function (options) {
 
 		var req = function () {
 			var	dfd = new $.Deferred();
-
-			if (!self.fetcher.count) {
-				if (self.options.paginationStyle !== "infinite") {
-					throw new Error("You must either specify a valid count() method in your fetcher or use a different pagination style. (see grid.options.paginationStyle)");
-				}
-			}
-
-			if (self.options.paginationStyle === "infinite") {
-				updateRowCount();
-				self.collection.refresh();
-				callback();
-				return;
-			}
 
 			self.fetcher.count(options, function (result) {
 				// Grid was destroyed before the callback finished
@@ -7056,7 +7980,6 @@ var DobyGrid = function (options) {
 	 * @private
 	 */
 	remoteFetch = function () {
-
 		// If scrolling fast, abort pending requests
 		var silentRemoteLoaded = true;
 		if (self.fetcher.request && typeof self.fetcher.request.abort === 'function') {
@@ -7091,8 +8014,7 @@ var DobyGrid = function (options) {
 			var dfd = new $.Deferred(),
 				vp = getVisibleRange(),
 				from = vp.top,
-				to = vp.bottom,
-				count = to - from;
+				to = vp.bottom;
 
 			// Decrease likelihood that user sees empty rows before the results
 			// load by prefetching extra ones.
@@ -7102,19 +8024,15 @@ var DobyGrid = function (options) {
 				to += self.options.rowsToPrefetch;
 			}
 
+			// Don't attempt to fetch more results than there are
 			if (from < 0) from = 0;
-
-			if (self.options.paginationStyle !== "infinite") {
-				// Don't attempt to fetch more results than there are
-				if (self.collection.length > 0) to = Math.min(to, self.collection.length - 1);
-			}
+			if (self.collection.length > 0) to = Math.min(to, self.collection.length - 1);
 
 			// If there are groups - we need to scan from the very top to ensure we calculate
 			// the correct data offsets.
 			var start = self.collection.groups.length ? 0 : from,
 				newFrom,
 				newTo,
-				newLimit,
 				r,
 				realRowOffset = 0,
 				nonDataOffset = 0,
@@ -7189,15 +8107,6 @@ var DobyGrid = function (options) {
 			}
 
 			var oldvariableRowHeight;
-			newLimit = newTo - newFrom + 1;
-
-			if (self.options.paginationStyle === "infinite") {
-				if (self.options.infinitePageSize) {
-					newLimit = Math.max(newLimit, self.options.infinitePageSize);
-				} else {
-					newLimit = count + 1;
-				}
-			}
 
 			// Determine if rows to load are already visible by checking for
 			// overlap between we're fetching and current visible ones.
@@ -7207,7 +8116,7 @@ var DobyGrid = function (options) {
 			remoteFetcher({
 				columns: cache.activeColumns,
 				filters: typeof(self.collection.filter) != 'function' ? self.collection.filter : null,
-				limit: newLimit,
+				limit: newTo - newFrom + 1,
 				offset: newFrom,
 				order: self.sorting
 			}, function (results) {
@@ -7242,10 +8151,6 @@ var DobyGrid = function (options) {
 
 				// Fire loaded function to process the changes
 				remoteLoaded(topRow, bottomRow);
-
-				if (self.options.paginationStyle === "infinite") {
-					self.collection.refresh();
-				}
 
 				// If variableRowHeight mode got enabled,
 				// we need to check to see if the viewport got filled. It's possible that the rows
@@ -7637,14 +8542,7 @@ var DobyGrid = function (options) {
 		var cacheEntry = cache.nodes[row], col;
 		if (!cacheEntry) return;
 
-		// Remove row from parent element
-		cacheEntry.rowNode[0].parentElement.removeChild(cacheEntry.rowNode[0]);
-
-		// Remove the row from the right viewport
-		if (cacheEntry.rowNode[1]) {
-			cacheEntry.rowNode[1].parentElement.removeChild(cacheEntry.rowNode[1]);
-		}
-
+		$canvas[0].removeChild(cacheEntry.rowNode);
 		delete cache.nodes[row];
 
 		var item = cache.rows[row];
@@ -7781,21 +8679,15 @@ var DobyGrid = function (options) {
 	renderColumnHeaders = function () {
 		if (!self.options.showHeader) return;
 
-		// Reset the headers
-		$headers.each(function () {
-			if (!$(this).is(':empty')) {
-				$(this).empty();
-				$(this).width(getHeadersWidth());
-			}
-		});
+		if (!$headers.is(':empty')) {
+			$headers.empty();
+			$headers.width(getHeadersWidth());
+		}
 
 		// Render columns
-		var column, html, classes, w, $headerTarget;
+		var column, html = [], classes, w;
 		for (var i = 0, l = cache.activeColumns.length; i < l; i++) {
-			html = [];
 			column = cache.activeColumns[i];
-
-			$headerTarget = (self.options.frozenColumns > -1) ? ((i <= self.options.frozenColumns) ? $headerL : $headerR) : $headerL;
 
 			// Determine classes
 			classes = [CLS.headercolumn, (column.headerClass || "")];
@@ -7815,14 +8707,13 @@ var DobyGrid = function (options) {
 			html.push('>');
 			html.push('<span class="' + CLS.columnname + '">' + column.name + '</span>');
 
-				if (column.sortable && self.options.showSortIndicator) {
+			if (column.sortable) {
 				html.push('<span class="' + CLS.sortindicator + '"></span>');
 			}
 
 			html.push('</div>');
-
-			$headerTarget.append(html.join(''));
 		}
+		$headers.append(html.join(''));
 
 		// Style the column headers accordingly
 		styleSortColumns();
@@ -7901,13 +8792,12 @@ var DobyGrid = function (options) {
 	 * @memberof DobyGrid
 	 * @private
 	 *
-	 * @param	{array}		stringArrayL		- Output array to which to append (for left pane)
-	 * @param	{array}		stringArrayR		- Output array to which to append (for right pane)
+	 * @param	{array}		stringArray			- Output array to which to append
 	 * @param	{integer}	row					- Current row index
 	 * @param	{object}	range				- Viewport range to display
 	 *
 	 */
-	renderRow = function (stringArrayL, stringArrayR, row, range) {
+	renderRow = function (stringArray, row, range) {
 		var d = self.getRowFromIndex(row),
 			rowCss = CLS.row +
 				(self.active && row === self.active.row ? " active" : "") +
@@ -7927,21 +8817,15 @@ var DobyGrid = function (options) {
 
 		if (d && d.class) rowCss += " " + (typeof d.class === 'function' ? d.class.bind(self)(row, d) : d.class);
 
-		var rowHtml = ["<div class='", rowCss, "' style='top:", top, "px"];
+		stringArray.push("<div class='" + rowCss + "' style='top:" + top + "px");
 
 		// In variable row height mode we need some fancy ways to determine height
 		if (variableRowHeight && pos.height !== null && pos.height !== undefined) {
 			var rowheight = pos.height - cellHeightDiff;
-			rowHtml = rowHtml.concat(';height:', rowheight, 'px;line-height:', (rowheight + self.options.lineHeightOffset), 'px');
+			stringArray.push(';height:' + rowheight + 'px;line-height:' + (rowheight + self.options.lineHeightOffset) + 'px');
 		}
 
-		rowHtml.push("'>");
-
-		stringArrayL.push.apply(stringArrayL, rowHtml);
-
-		if (self.options.frozenColumns > -1) {
-			stringArrayR.push.apply(stringArrayR, rowHtml);
-		}
+		stringArray.push("'>");
 
 		var colspan, m, i, l;
 		for (i = 0, l = cache.activeColumns.length; i < l; i++) {
@@ -7965,13 +8849,7 @@ var DobyGrid = function (options) {
 					break;
 				}
 
-				if ((self.options.frozenColumns > -1) && (i > self.options.frozenColumns)) {
-					renderCell(stringArrayR, row, i, colspan, d);
-				} else {
-					renderCell(stringArrayL, row, i, colspan, d);
-				}
-			} else if ((self.options.frozenColumns > -1) && (i <= self.options.frozenColumns)) {
-				renderCell(stringArrayL, row, i, colspan, d);
+				renderCell(stringArray, row, i, colspan, d);
 			}
 
 			if (colspan > 1) {
@@ -7979,22 +8857,14 @@ var DobyGrid = function (options) {
 			}
 		}
 
-		var endRowHtml = [];
-
 		// Add row resizing handle
 		if (self.options.resizableRows && d.resizable !== false) {
-			endRowHtml.push('<div class="');
-			endRowHtml.push(CLS.rowhandle);
-			endRowHtml.push('"></div>');
+			stringArray.push('<div class="');
+			stringArray.push(CLS.rowhandle);
+			stringArray.push('"></div>');
 		}
 
-		endRowHtml.push("</div>");
-
-		stringArrayL.push.apply(stringArrayL, endRowHtml);
-
-		if (options.frozenColumns > -1) {
-			stringArrayR.push.apply(stringArrayR, endRowHtml);
-		}
+		stringArray.push("</div>");
 	};
 
 
@@ -8008,8 +8878,7 @@ var DobyGrid = function (options) {
 	 *
 	 */
 	renderRows = function (range) {
-		var stringArrayL = [],
-			stringArrayR = [],
+		var stringArray = [],
 			rows = [],
 			needToReselectCell = false,
 			i, ii;
@@ -8038,8 +8907,7 @@ var DobyGrid = function (options) {
 				cellRenderQueue: []
 			};
 
-			renderRow(stringArrayL, stringArrayR, i, range);
-
+			renderRow(stringArray, i, range);
 			if (self.active && self.active.node && self.active.row === i) {
 				needToReselectCell = true;
 			}
@@ -8048,34 +8916,12 @@ var DobyGrid = function (options) {
 
 		if (!rows.length) return;
 
-		var xLeft = document.createElement("div"),
-			xRight = document.createElement("div");
-
-		xLeft.innerHTML = stringArrayL.join("");
-		xRight.innerHTML = stringArrayR.join("");
+		var x = document.createElement("div");
+		x.innerHTML = stringArray.join("");
 
 		// Cache the row nodes
 		for (i = 0, ii = rows.length; i < ii; i++) {
-			// If frozen rows are enabled
-			if (hasFrozenRows && (rows[i] >= actualFrozenRow)) {
-				if (self.options.frozenColumns > -1) {
-					cache.nodes[rows[i]].rowNode = $()
-						.add($(xLeft.firstChild).appendTo($canvas[2]))
-						.add($(xRight.firstChild).appendTo($canvas[3]));
-				} else {
-					cache.nodes[rows[i]].rowNode = $()
-						.add($(xLeft.firstChild).appendTo($canvas[2]));
-				}
-			// If frozen columns are enabled
-			} else if (self.options.frozenColumns > -1) {
-				cache.nodes[rows[i]].rowNode = $()
-					.add($(xLeft.firstChild).appendTo($canvas[0]))
-					.add($(xRight.firstChild).appendTo($canvas[1]));
-			// No frozen rows or columns
-			} else {
-				cache.nodes[rows[i]].rowNode = $()
-					.add($(xLeft.firstChild).appendTo($canvas[0]));
-			}
+			cache.nodes[rows[i]].rowNode = $canvas[0].appendChild(x.firstChild);
 		}
 
 		if (needToReselectCell) {
@@ -8172,24 +9018,12 @@ var DobyGrid = function (options) {
 		if (!initialized) return;
 
 		viewportH = getViewportHeight();
-		viewportW = getViewportWidth();
 
 		// Save the currently visible number of rows
 		calculateVisibleRows();
 
-		// Determine height of each pane
-		// TODO: Temporary hack until work on frozen rows starts
-		$panes.each(function (i) {
-			if (!hasFrozenRows) {
-				if (i > 1) {
-					$(this).height(0);
-				} else {
-					$(this).css({bottom: 0});
-					$viewport.eq(0).css({height: viewportH});
-					$viewport.eq(1).css({height: viewportH});
-				}
-			}
-		});
+		viewportW = parseFloat($.css(self.$el[0], "width", true));
+		$viewport.height(viewportH);
 
 		updateRowCount();
 
@@ -8597,7 +9431,7 @@ var DobyGrid = function (options) {
 	 */
 	scrollTo = function (y) {
 		y = Math.max(y, 0);
-		y = Math.min(y, th - viewportH + (viewportHasHScroll || self.options.frozenColumns > -1 ? window.scrollbarDimensions.height : 0));
+		y = Math.min(y, th - viewportH + (viewportHasHScroll ? window.scrollbarDimensions.height : 0));
 
 		var oldOffset = offset;
 
@@ -8618,20 +9452,7 @@ var DobyGrid = function (options) {
 		if (prevScrollTop != newScrollTop) {
 			var scrollTopDelta = Math.abs(newScrollTop - prevScrollTop);
 			vScrollDir = (prevScrollTop + oldOffset < newScrollTop + offset) ? 1 : -1;
-			lastRenderedScrollTop = (scrollTop = prevScrollTop = newScrollTop);
-
-			// Scroll top-left viewport
-			$viewport.eq(0)[0].scrollTop = newScrollTop;
-
-			// If frozen columns are enabled, scroll the top-right viewport
-			if (self.options.frozenColumns > -1) {
-				$viewport.eq(1)[0].scrollTop = newScrollTop;
-			}
-
-			// If frozen rows are enabled, scroll the bottom-left viewport
-			if (hasFrozenRows) {
-				$viewport.eq(2)[0].scrollTop = newScrollTop;
-			}
+			$viewport[0].scrollTop = (lastRenderedScrollTop = scrollTop = prevScrollTop = newScrollTop);
 
 			self.trigger('viewportchanged', null, {
 				scrollLeft: 0,
@@ -8872,9 +9693,7 @@ var DobyGrid = function (options) {
 	 */
 	this.setColumns = function (columns) {
 		// Copy array
-		var oldAggregators = {};
 		var oldColumns = this.options.columns.map(function (c) {
-			oldAggregators[c.id] = c.aggregators;
 			return _.clone(c);
 		});
 
@@ -8904,54 +9723,6 @@ var DobyGrid = function (options) {
 			applyColumnWidths();
 			handleScroll();
 			self.options.minColumnWidth === "headerContent" && fitColumnsToHeader(true);
-
-			// If aggregators have changed - we will need to refresh to re-draw the
-			// aggregator rows.
-			var oldAggregatorExists, newActiveAggregator;
-			for (var i = 0, l = columns.length; i < l; i++) {
-				oldAggregatorExists = oldAggregators[columns[i].id] && oldAggregators[columns[i].id].aggregators;
-				newActiveAggregator = _.findWhere((columns[i].aggregators || []), {active: true});
-
-				// Refresh if
-				if (
-					// There is at least one active aggregator in the new column definitions
-					newActiveAggregator && (
-						// Aggregators have changed between old and new definitions
-						(columns[i].aggregators && columns[i].aggregators.length && !oldAggregatorExists) ||
-						(!columns[i].aggregators && oldAggregatorExists)
-					)
-				) {
-					this.collection.refresh();
-					break;
-				}
-			}
-		}
-	};
-
-
-	/**
-	 * Validates and sets up options for frozen columns and rows
-	 * @method setFrozenOptions
-	 * @memberof DobyGrid
-	 * @private
-	 */
-	setFrozenOptions = function () {
-		// Validate frozenColumns value
-		self.options.frozenColumns = (self.options.frozenColumns >= 0 && self.options.frozenColumns < self.options.columns.length) ? parseInt(self.options.frozenColumns) : -1;
-
-		// Validate frozenRow value
-		self.options.frozenRows = (self.options.frozenRows >= 0 && self.options.frozenRows < numVisibleRows) ? parseInt(self.options.frozenRows) : -1;
-
-		if (self.options.frozenRows > -1) {
-			hasFrozenRows = true;
-			frozenRowsHeight = (self.options.frozenRows) * self.options.rowHeight;
-
-			// TODO: This will not work with variableRowHeights
-			var dataLength = getDataLength() || this.data.length;
-
-			actualFrozenRow = (self.options.frozenBottom) ? (dataLength - self.options.frozenRows) : self.options.frozenRows;
-		} else {
-			hasFrozenRows = false;
 		}
 	};
 
@@ -9032,9 +9803,6 @@ var DobyGrid = function (options) {
 			render();
 		}
 
-		setFrozenOptions();
-		setScroller();
-
 		if (recalc_heights) {
 			invalidateAllRows();
 			removeCssRules();
@@ -9045,9 +9813,8 @@ var DobyGrid = function (options) {
 		}
 
 		// If setting new data - this needs to be executed after column changes to ensure
-		// additions to aggregators are picked up. Don't do this if columns have changed
-		// because setColumns above will perform it's own reset for aggregators if needed.
-		if (options.data && !options.columns) {
+		// additions to aggregators are picked up.
+		if (options.data) {
 			this.reset(options.data);
 		}
 
@@ -9060,7 +9827,7 @@ var DobyGrid = function (options) {
 		if ('autoColumnWidth' in options) {
 			// Also make sure that the right resize handles are drawn
 			setupColumnResize();
-			options.autoColumnWidth && autosizeColumns();
+			autosizeColumns();
 
 			// Fire column resize event
 			self.trigger('columnresize', this._event, {});
@@ -9109,44 +9876,6 @@ var DobyGrid = function (options) {
 
 		// This will recalculate scroll heights to ensure scrolling is properly handled.
 		updateRowCount();
-	};
-
-
-	/**
-	 * When frozen columns are used it's not immediately obvious which viewport
-	 * controls the scrolling events. This methods sets that up accordingly.
-	 * @method setScroller
-	 * @memberof DobyGrid
-	 * @private
-	 *
-	 */
-	setScroller = function () {
-		// When frozen columns are enabled
-		if (self.options.frozenColumns > -1) {
-
-			// If frozen rows are enabled too
-			if (hasFrozenRows) {
-				if (self.options.frozenBottom) {
-					$viewportScrollContainerX = $viewport.eq(3);
-					$viewportScrollContainerY = $viewport.eq(1);
-				} else {
-					$viewportScrollContainerX = $viewportScrollContainerY = $viewport.eq(3);
-				}
-			} else {
-				$viewportScrollContainerX = $viewportScrollContainerY = $viewport.eq(1);
-			}
-		} else {
-			if (hasFrozenRows) {
-				if (self.options.frozenBottom) {
-					$viewportScrollContainerX = $viewport.eq(2);
-					$viewportScrollContainerY = $viewport.eq(0);
-				} else {
-					$viewportScrollContainerX = $viewportScrollContainerY = $viewport.eq(2);
-				}
-			} else {
-				$viewportScrollContainerX = $viewportScrollContainerY = $viewport.eq(0);
-			}
-		}
 	};
 
 
@@ -9347,7 +10076,6 @@ var DobyGrid = function (options) {
 		columnElements = $headers.children("." + CLS.headercolumn);
 		var $handle = columnElements.find("." + CLS.handle);
 		if ($handle && $handle.length) removeElement($handle[0]);
-
 		columnElements.each(function (i) {
 			if (!cache.activeColumns[i].resizable) return;
 			if (firstResizable === undefined) firstResizable = i;
@@ -9366,6 +10094,7 @@ var DobyGrid = function (options) {
 			var column = getColumnFromEvent(event);
 
 			resizeColumnToContent(column, event);
+
 		});
 
 		// Create drag handles
@@ -9426,7 +10155,7 @@ var DobyGrid = function (options) {
 	setupColumnSort = function () {
 		if (!self.options.showHeader) return;
 
-		$headerScroller.click(function (e) {
+		$headers.click(function (e) {
 			self._event = e;
 
 			// If clicking on drag handle - stop
@@ -9500,7 +10229,6 @@ var DobyGrid = function (options) {
 		// First, clear the viewport
 		invalidateAllRows();
 
-		/*
 		// Scroll all the way up and remove scrollbars
 		if ($canvas) {
 			h = null;			// Resets the current canvas height cache
@@ -9508,7 +10236,7 @@ var DobyGrid = function (options) {
 
 			$canvas.height('100%').width('100%');
 			scrollTo(0);
-		}*/
+		}
 
 		// Create an overlay
 		if ($overlay && $overlay.length) removeElement($overlay[0]);
@@ -9534,7 +10262,7 @@ var DobyGrid = function (options) {
 	 *
 	 */
 	this.showQuickFilter = function (column_id) {
-		if (!self.options.showHeader || !self.options.quickFilter) return;
+		if (!self.options.showHeader) return;
 
 		var handleResize = function () {
 			// Update viewport
@@ -9547,15 +10275,13 @@ var DobyGrid = function (options) {
 
 		// Toggle off
 		if ((column_id === undefined || column_id === null) && $headerFilter) {
-			$headerFilter.each(function () {
-				removeElement(this);
-			});
+			removeElement($headerFilter[0]);
 			$headerFilter = undefined;
 
 			handleResize();
 
 			// Re-focus on the canvas
-			$canvas.eq(0).focus();
+			$canvas.focus();
 			return;
 		}
 
@@ -9602,11 +10328,8 @@ var DobyGrid = function (options) {
 
 		// Draw new filter bar
 		if (!$headerFilter) {
-			$headerFilter = $();
-			$headerFilterL = $('<div class="' + CLS.headerfilter + '"></div>').appendTo($headerScrollerL);
-			$headerFilterR = $('<div class="' + CLS.headerfilter + '"></div>').appendTo($headerScrollerR);
-			$headerFilter = $headerFilter.add($headerFilterL);
-			$headerFilter = $headerFilter.add($headerFilterR);
+			$headerFilter = $('<div class="' + CLS.headerfilter + '"></div>')
+				.appendTo($headerScroller);
 
 			// Create a cell for each column
 			var column, cell, html;
@@ -9620,12 +10343,7 @@ var DobyGrid = function (options) {
 				html.push('">');
 				html.push('</div>');
 				cell = $(html.join(''));
-
-				if (i <= self.options.frozenColumns || self.options.frozenColumns < 0) {
-					cell.appendTo($headerFilterL);
-				} else {
-					cell.appendTo($headerFilterR);
-				}
+				cell.appendTo($headerFilter);
 
 				// Skip non-filterable columns
 				if (!column.filterable) continue;
@@ -9745,14 +10463,14 @@ var DobyGrid = function (options) {
 
 		var i = stickyGroups.length,
 			group,
-			offset = $viewport.eq(0).position().top,
+			offset = $viewport.position().top,
 			isFirstGroupCollapsed = i && stickyGroups[0].collapsed ? true : false,
 			isFirstGroupEmptyNull = i && stickyGroups[0].value === null && !stickyGroups[0].predef.groupNulls;
 
 		// Reset currently rendered groups
 		if (scrollTop === 0 || isFirstGroupCollapsed || isFirstGroupEmptyNull || haveStickyGroupsChanged) {
 			cache.stickyRows = [];
-			$panes.children('.' + CLS.sticky).remove();
+			$viewport.parent().children('.' + CLS.sticky).remove();
 		}
 
 		// If we're at the top - don't draw any sticky groups
@@ -9777,7 +10495,7 @@ var DobyGrid = function (options) {
 				} else {
 					var child = '.' + CLS.sticky + '[rel="' + group[self.options.idProperty] + '"]:first';
 
-					$clone = $panes.children(child);
+					$clone = $viewport.parent().children(child);
 
 					if ($clone.length) $clone.remove();
 
@@ -9790,19 +10508,14 @@ var DobyGrid = function (options) {
 					// Create group row if it doesn't already exist,
 					// (due to being outside the viewport)
 					if (!cacheNode) {
-						var leftrowhtml = [],
-							rightrowhtml = [];
-
-						renderRow(leftrowhtml, rightrowhtml, stickyIndex, {
+						var rowhtml = [];
+						renderRow(rowhtml, stickyIndex, {
 							bottom: stickyIndex,
 							leftPx: 0,
 							top: stickyIndex,
-							rightPx: self.$el.width()
+							rightPx: $viewport.width()
 						});
-
-						$clone = $();
-						$clone = $clone.add($(leftrowhtml.join('')));
-						$clone = $clone.add($(rightrowhtml.join('')));
+						$clone = $(rowhtml.join(''));
 					} else {
 						var $groupHeaderNode = $(cacheNode.rowNode);
 						$clone = $groupHeaderNode.clone();
@@ -9811,19 +10524,9 @@ var DobyGrid = function (options) {
 					$clone
 						.addClass(CLS.sticky)
 						.attr('rel', group[self.options.idProperty])
-						.removeClass(CLS.grouptoggle);
-
-					// Inject left-pane sticky
-					$clone.eq(0)
-						.width($canvas.eq(0).css('width'))
-						.appendTo($panes.eq(0));
-
-					// Inject right-pane sticky (for frozen columns)
-					if ($clone.length > 1) {
-						$clone.eq(1)
-							.width($canvas.eq(1).css('width'))
-							.appendTo($panes.eq(1));
-					}
+						.width($canvas.css('width'))
+						.removeClass(CLS.grouptoggle)
+						.appendTo($viewport.parent());
 
 					// Cache row
 					cache.stickyRows[i] = $clone;
@@ -9845,7 +10548,7 @@ var DobyGrid = function (options) {
 	 * @private
 	 */
 	styleSortColumns = function () {
-	        if (!self.options.showHeader || !self.options.showSortIndicator) return;
+		if (!self.options.showHeader) return;
 
 		var headerColumnEls = $headers.children();
 		headerColumnEls
@@ -10379,47 +11082,16 @@ var DobyGrid = function (options) {
 	 *
 	 */
 	updateCanvasWidth = function (forceColumnWidthsUpdate) {
-		var oldCanvasWidth = canvasWidth,
-			oldCanvasWidthL = canvasWidthL,
-			oldCanvasWidthR = canvasWidthR,
-			widthChanged;
-
-		// Calculate new canvas widths
+		var oldCanvasWidth = canvasWidth;
 		canvasWidth = getCanvasWidth();
 
-		// Determine if any of the canvas widths have changed
-		widthChanged = canvasWidth !== oldCanvasWidth || canvasWidthL !== oldCanvasWidthL || canvasWidthR !== oldCanvasWidthR;
-
-		// If canvas width has changed
-		if (widthChanged) {
-
-			// Handle frozen columns
-			if (self.options.frozenColumns > -1) {
-				$panes.eq(0).width(canvasWidthL);
-				$panes.eq(1).css({
-					left: canvasWidthL + 'px'
-				});
-			} else {
-				$panes.eq(0).css({
-					right: 0,
-					width: 'auto'
-				});
-				$panes.eq(1).css({
-					width: 0
-				});
-			}
-
-			$canvas.eq(0).width(canvasWidthL);
-			$canvas.eq(1).width(self.options.fullWidthRows ? canvasWidth - canvasWidthL : canvasWidthR);
-
-			// Set header widths
+		if (canvasWidth != oldCanvasWidth) {
+			$canvas.width(canvasWidth);
 			if (self.options.showHeader) $headers.width(getHeadersWidth());
-
-			// Determine if we have horizontal scrolling
 			viewportHasHScroll = (canvasWidth > viewportW - window.scrollbarDimensions.width);
 		}
 
-		if (widthChanged || forceColumnWidthsUpdate) {
+		if (canvasWidth != oldCanvasWidth || forceColumnWidthsUpdate) {
 			applyColumnWidths();
 		}
 	};
@@ -10459,9 +11131,6 @@ var DobyGrid = function (options) {
 							$(node).removeClass(removedRowHash[columnId]);
 						}
 					}
-				}
-				if (Object.keys(removedRowHash).length === cache.activeColumns.length){
-					$(cache.nodes[row].rowNode).removeClass(self.options.selectedClass);
 				}
 			}
 
@@ -10546,7 +11215,7 @@ var DobyGrid = function (options) {
 
 			columnIdx = columnIdx | 0;
 			var m = cache.activeColumns[columnIdx],
-				node = cacheEntry.cellNodesByColumnIdx[columnIdx][0];
+				node = cacheEntry.cellNodesByColumnIdx[columnIdx];
 
 			if (self.active && row === self.active.row && columnIdx === self.active.cell && self.currentEditor) {
 				self.currentEditor.loadValue(d);
@@ -10642,7 +11311,7 @@ var DobyGrid = function (options) {
 			scrollTo(scrollTop + offset);
 		} else {
 			// scroll to bottom
-			scrollTo(th - viewportH + (viewportHasHScroll ? window.scrollbarDimensions.height : 0));
+			scrollTo(th - viewportH);
 		}
 
 		// If autoColumnWidth is enabled and the scrollbar has disappeared - we need to resize
@@ -10845,3 +11514,147 @@ var DobyGrid = function (options) {
 };
 
 module.exports = DobyGrid;
+
+},{"./classes/Aggregate":1,"./classes/CellRangeDecorator":2,"./classes/DefaultEditor":3,"./classes/DefaultFormatter":4,"./classes/Dropdown":5,"./classes/Group":6,"./classes/NonDataItem":7,"./classes/Placeholder":8,"./classes/Range":9,"./classes/Tooltip":10,"./utils/classes":12,"./utils/naturalSort":13,"./utils/removeElement":14}],12:[function(require,module,exports){
+"use strict";
+
+var base = 'doby-grid';
+
+module.exports = {
+	autoheight:				base + "-autoheight",
+	cell:					base + '-cell',
+	cellunselectable:		base + '-cell-unselectable',
+	clipboard:				base + '-clipboard',
+	collapsed:				'collapsed',
+	columnname:				base + '-column-name',
+	columnspacer:			base + '-column-spacer',
+	contextmenu:			base + '-contextmenu',
+	dropdown:				base + '-dropdown',
+	dropdownmenu:			base + '-dropdown-menu',
+	dropdownitem:			base + '-dropdown-item',
+	dropdowndivider:		base + '-dropdown-divider',
+	dropdownarrow:			base + '-dropdown-arrow',
+	dropdownicon:			base + '-dropdown-icon',
+	dropdownleft:			base + '-dropdown-left',
+	dropdowntitle:			base + '-dropdown-title',
+	editor:					base + '-editor',
+	empty:					base + '-empty',
+	expanded:				'expanded',
+	garbage:				'DobyGridGarbageBin',
+	group:					base + '-group',
+	grouptitle:				base + '-group-title',
+	grouptoggle:			base + '-group-toggle',
+	handle:					base + '-resizable-handle',
+	header:					base + '-header',
+	headercolumns:			base + '-header-columns',
+	headercolumn:			base + '-header-column',
+	headercolumnactive:		base + '-header-column-active',
+	headercolumndrag:		base + '-header-column-dragging',
+	headercolumnsorted:		base + '-header-column-sorted',
+	headerfilter:			base + '-header-filter',
+	headerfiltercell:		base + '-header-filter-cell',
+	headerfilterdisabled:	base + '-header-filter-disabled',
+	headersortable:			'sortable',
+	invalid:				'invalid',
+	invalidicon:			base + '-invalid-icon',
+	left:					base + '-scrollbar-left',
+	noright:				base + '-no-right',
+	placeholder:			base + '-sortable-placeholder',
+	rangedecorator:			base + '-range-decorator',
+	rangedecoratorstat:		base + '-range-decorator-stats',
+	row:					base + '-row',
+	rowdragcontainer:		base + '-row-drag-container',
+	rowhandle:				base + '-row-handle',
+	rowtotal:				base + '-row-total',
+	scrollloader:			base + '-scroll-loader',
+	sortindicator:			base + '-sort-indicator',
+	sortindicatorasc:		base + '-sort-indicator-asc',
+	sortindicatordesc:		base + '-sort-indicator-desc',
+	sticky:					base + '-sticky',
+	tooltip:				base + '-tooltip',
+	tooltiparrow:			base + '-tooltip-arrow',
+	viewport:				base + '-viewport',
+	canvas:					base + '-canvas'
+};
+},{}],13:[function(require,module,exports){
+"use strict";
+
+/**
+ * Natural Sort algorithm for Javascript - Version 0.7 - Released under MIT license
+ * Author: Jim Palmer (based on chunking idea from Dave Koelle)
+ * @method naturalSort
+ */
+module.exports = function (a, b) {
+	var re = /(^-?[0-9]+(\.?[0-9]*)[df]?e?[0-9]?$|^0x[0-9a-f]+$|[0-9]+)/gi,
+		sre = /(^[ ]*|[ ]*$)/g,
+		dre = /(^([\w ]+,?[\w ]+)?[\w ]+,?[\w ]+\d+:\d+(:\d+)?[\w ]?|^\d{1,4}[\/\-]\d{1,4}[\/\-]\d{1,4}|^\w+, \w+ \d+, \d{4})/,
+		hre = /^0x[0-9a-f]+$/i,
+		ore = /^0/,
+		i = function (s) {
+			return ('' + s).toLowerCase() || '' + s;
+		},
+		// convert all to strings strip whitespace
+		x = i(a).replace(sre, '') || '',
+		y = i(b).replace(sre, '') || '',
+		// chunk/tokenize
+		xN = x.replace(re, '\0$1\0').replace(/\0$/, '').replace(/^\0/, '').split('\0'),
+		yN = y.replace(re, '\0$1\0').replace(/\0$/, '').replace(/^\0/, '').split('\0'),
+		// numeric, hex or date detection
+		xD = parseInt(x.match(hre), 10) || (xN.length != 1 && x.match(dre) && Date.parse(x)),
+		yD = parseInt(y.match(hre), 10) || xD && y.match(dre) && Date.parse(y) || null,
+		oFxNcL, oFyNcL;
+	// first try and sort Hex codes or Dates
+	if (yD)
+		if (xD < yD) {
+			return -1;
+		} else if (xD > yD) {
+			return 1;
+		}
+	// natural sorting through split numeric strings and default strings
+	for (var cLoc = 0, numS = Math.max(xN.length, yN.length); cLoc < numS; cLoc++) {
+		// find floats not starting with '0', string or 0 if not defined (Clint Priest)
+		oFxNcL = !(xN[cLoc] || '').match(ore) && parseFloat(xN[cLoc]) || xN[cLoc] || 0;
+		oFyNcL = !(yN[cLoc] || '').match(ore) && parseFloat(yN[cLoc]) || yN[cLoc] || 0;
+		if (isNaN(oFxNcL) !== isNaN(oFyNcL)) {
+			// handle numeric vs string comparison - number < string - (Kyle Adams)
+			return (isNaN(oFxNcL)) ? 1 : -1;
+		} else if (typeof oFxNcL !== typeof oFyNcL) {
+			// rely on string comparison if different types - i.e. '02' < 2 != '02' < '2'
+			oFxNcL += '';
+			oFyNcL += '';
+		}
+		if (oFxNcL < oFyNcL) return -1;
+		if (oFxNcL > oFyNcL) return 1;
+	}
+	return 0;
+};
+},{}],14:[function(require,module,exports){
+"use strict";
+
+var CLS	= require('./../utils/classes');
+
+/**
+ * This seems to be the only reliable way to remove nodes from the DOM without creating a
+ * DOM memory leak. See this post:
+ * http://stackoverflow.com/questions/768621/how-to-dispose-of-dom-elements-in-javascript-to-avoid-memory-leaks?rq=1
+ *
+ * @method removeElement
+ *
+ * @param	{DOMObject}	element			- DOM node to remove
+ *
+ */
+module.exports = function (element) {
+	var garbageBin = document.getElementById(CLS.garbage);
+	if (!garbageBin) {
+		garbageBin = document.createElement('DIV');
+		garbageBin.id = CLS.garbage;
+		garbageBin.style.display = 'none';
+		document.body.appendChild(garbageBin);
+	}
+
+	// Move the element to the garbage bin
+	garbageBin.appendChild(element);
+	garbageBin.innerHTML = '';
+};
+},{"./../utils/classes":12}]},{},[11])(11)
+});

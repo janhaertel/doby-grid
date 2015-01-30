@@ -725,6 +725,43 @@ describe("Methods and Data Manipulation", function () {
 		// ==========================================================================================
 
 
+		it("should correctly export group", function (done) {
+			// Prepare for test
+			var grid = resetGrid({
+				columns: [
+					{id: 'id', name: 'ID', field: 'id'},
+					{id: 'name', name: 'Name', field: 'name'},
+					{id: 'category', name: 'Category', field: 'category'}
+				],
+				data: [{
+					id: 1,
+					data: {id: 1, name: 'one', category: 'odd'}
+				}, {
+					id: 2,
+					data: {id: 2, name: 'two', category: 'even'}
+				}, {
+					id: 3,
+					data: {id: 3, name: 'three', category: 'odd'}
+				}]
+			});
+
+			// Group by category (odd and even numbers)
+			grid.addGrouping('category');
+
+			// We want the "odd" group, which will appear last and as the second row.
+			var groupRow = 1;
+
+			// Export
+			grid.export('csv', function (result) {
+				expect(result).toEqual('"ID","Name","Category"\n"1","one","odd"\n"3","three","odd"');
+				done();
+			}, groupRow);
+		});
+
+
+		// ==========================================================================================
+
+
 		it("should correctly handle Backbone Collection data", function (done) {
 			var collection = new Backbone.Collection([
 				{id: 'asd1', name: 'one'},
@@ -1376,7 +1413,8 @@ describe("Methods and Data Manipulation", function () {
 				}],
 				filters: [],
 				grouping: [],
-				sort: []
+				sort: [],
+				resizedRows: []
 			});
 		});
 
@@ -1406,7 +1444,8 @@ describe("Methods and Data Manipulation", function () {
 				}],
 				filters: [],
 				grouping: [],
-				sort: []
+				sort: [],
+				resizedRows: []
 			});
 		});
 	});
@@ -1478,7 +1517,7 @@ describe("Methods and Data Manipulation", function () {
 			grid.hideOverlay();
 
 			// Should clear the canvas and show the custom overlay
-			var $viewport = grid.$el.find('.doby-grid-canvas');
+			var $viewport = grid.$el.find('.doby-grid-canvas').eq(0);
 			expect($viewport).not.toContainElement('.doby-grid-overlay');
 			expect($viewport).toContainElement('.doby-grid-row');
 		});
@@ -1613,8 +1652,8 @@ describe("Methods and Data Manipulation", function () {
 			}).not.toThrow();
 		});
 	});
-	
-	
+
+
 	// ==========================================================================================
 
 
@@ -1624,18 +1663,18 @@ describe("Methods and Data Manipulation", function () {
 				{data: {id: 1, name: 'test'}, id: 1},
 				{data: {id: 2, name: 'veryveryveryveryveryveryveryverylong'}, id: 2}
 			];
-			
+
 			var grid = resetGrid({
 				columns: [{field: 'name', id: 'name'}],
 				data: newdata
 			});
-			
+
 			var prevWidth = grid.options.columns[0].width;
-			
+
 			grid.resizeColumnsToContent();
-			
+
 			var newWidth = grid.options.columns[0].width;
-			
+
 			expect(newWidth).toBeGreaterThan(prevWidth);
 		});
 	});
@@ -3274,7 +3313,8 @@ describe("Methods and Data Manipulation", function () {
 				data: [
 					{id: 1, data: {id: 1, name: 'one'}},
 					{id: 2, data: {id: 2, name: 'two'}}
-				]
+				],
+				quickFilter: true
 			});
 
 			// Execute
@@ -3297,7 +3337,8 @@ describe("Methods and Data Manipulation", function () {
 				data: [
 					{id: 1, data: {id: 1, name: 'one'}},
 					{id: 2, data: {id: 2, name: 'two'}}
-				]
+				],
+				quickFilter: true
 			});
 
 			// Show

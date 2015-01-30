@@ -3,7 +3,8 @@
 var base = 'doby-grid';
 
 module.exports = {
-	autoheight:				base + "-autoheight",
+	autoheight:				base + '-autoheight',
+	canvas:					base + '-canvas',
 	cell:					base + '-cell',
 	cellunselectable:		base + '-cell-unselectable',
 	clipboard:				base + '-clipboard',
@@ -41,6 +42,8 @@ module.exports = {
 	invalidicon:			base + '-invalid-icon',
 	left:					base + '-scrollbar-left',
 	noright:				base + '-no-right',
+	pane:					base + '-pane',
+	paneactive:				base + '-pane-active',
 	placeholder:			base + '-sortable-placeholder',
 	rangedecorator:			base + '-range-decorator',
 	rangedecoratorstat:		base + '-range-decorator-stats',
@@ -55,6 +58,5 @@ module.exports = {
 	sticky:					base + '-sticky',
 	tooltip:				base + '-tooltip',
 	tooltiparrow:			base + '-tooltip-arrow',
-	viewport:				base + '-viewport',
-	canvas:					base + '-canvas'
+	viewport:				base + '-viewport'
 };
