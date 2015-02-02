@@ -6022,7 +6022,7 @@ var DobyGrid = function (options) {
 				handled = handleNavigateKey(function () {
 
 					// don't naviagte in cycle mode if shift is used
-					if (shiftUsed && self.options.cycleRowBasedSelection && (newestRange.toRow >= getDataLength() -1)) {
+					if (shiftUsed && self.options.cycleRowBasedSelection && (newestRange.toRow >= getDataLength() - 1)) {
 						return true;
 					}
 
@@ -6036,7 +6036,7 @@ var DobyGrid = function (options) {
 				handled = handleNavigateKey(function () {
 
 					// don't naviagte in cycle mode if shift is used
-					if (shiftUsed && self.options.cycleRowBasedSelection && (newestRange.toRow <= 0)) {
+					if (shiftUsed && self.options.cycleRowBasedSelection && (newestRange.fromRow <= 0)) {
 						return true;
 					}
 
