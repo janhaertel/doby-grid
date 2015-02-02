@@ -321,6 +321,7 @@ var DobyGrid = function (options) {
 		columnSpacing:			1,
 		columnWidth:			80,
 		contextMenu:			'all',
+			cycleRowBasedSelection: false,
 		ctrlSelect:				true,
 		data:					[],
 		dataExtractor:			null,
@@ -5308,8 +5309,13 @@ var DobyGrid = function (options) {
 			dataLength = getDataLength();
 		while (true) {
 			if (++row >= dataLength) {
+					// In row based selection mode, cycle through rows
+					if (rowBasedSelection && cycleRowBasedSelection) {
+						row = 0;
+					} else {
 				return null;
 			}
+				}
 
 			prevCell = cell = 0;
 			while (cell <= posX) {
@@ -5500,8 +5506,13 @@ var DobyGrid = function (options) {
 		var prevCell;
 		while (true) {
 			if (--row < 0) {
+					// In row based selection mode, cycle through rows
+					if (rowBasedSelection && cycleRowBasedSelection) {
+						row = getDataLength() - 1;
+					} else {
 				return null;
 			}
+				}
 
 			prevCell = cell = 0;
 			while (cell <= posX) {
