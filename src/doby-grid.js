@@ -5310,7 +5310,7 @@ var DobyGrid = function (options) {
 		while (true) {
 			if (++row >= dataLength) {
 				// In row based selection mode, cycle through rows
-				if (rowBasedSelection && cycleRowBasedSelection) {
+					if (self.options.rowBasedSelection && self.options.cycleRowBasedSelection) {
 					row = 0;
 				} else {
 					return null;
@@ -5507,7 +5507,7 @@ var DobyGrid = function (options) {
 		while (true) {
 			if (--row < 0) {
 				// In row based selection mode, cycle through rows
-				if (rowBasedSelection && cycleRowBasedSelection) {
+					if (self.options.rowBasedSelection && self.options.cycleRowBasedSelection) {
 					row = getDataLength() - 1;
 				} else {
 					return null;
