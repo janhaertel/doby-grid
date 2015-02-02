@@ -6074,13 +6074,17 @@ var DobyGrid = function (options) {
 				break;
 			// Home
 			case 36 :
-				self.scrollToRow(0);
-				handled = true;
+				if (!self.options.editable || !self.currentEditor) {
+					self.scrollToRow(0);
+					handled = true;
+				}
 				break;
 			// END
 			case 35 :
-				self.scrollToRow(self.collection.items.length - 1);
-				handled = true;
+				if (!self.options.editable || !self.currentEditor) {
+					self.scrollToRow(self.collection.items.length - 1);
+					handled = true;
+				}
 				break;
 			// ESC
 			case 27 :
