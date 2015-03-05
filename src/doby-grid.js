@@ -62,6 +62,7 @@ var DobyGrid = function (options) {
 	// Private
 	var self = this,
 		$canvas,
+		$gutters,
 		$headers,
 		$headerL,
 		$headerR,
@@ -366,6 +367,7 @@ var DobyGrid = function (options) {
 		selectedClass:			"selected",
 			selectOnNavigate:		false,
 		shiftSelect:			true,
+		showGutters:			false,
 		showHeader:				true,
 			showSortIndicator:		true,
 		stickyFocus:			false,
@@ -1795,6 +1797,7 @@ var DobyGrid = function (options) {
 		var cclasses = [self.NAME];
 		if (self.options.class) cclasses.push(self.options.class);
 		if (self.options.scrollbarPosition === 'left') cclasses.push(CLS.left);
+		if (self.options.showGutters) cclasses.push(CLS.guttersVisible);
 
 		self.$el = $('<div class="' + cclasses.join(' ') + '" id="' + uid + '"></div>');
 
@@ -1804,6 +1807,7 @@ var DobyGrid = function (options) {
 		$panes = $();
 		$viewport = $();
 		$canvas = $();
+		$gutters = $();
 
 		for (var i = 0, l = panes.length; i < l; i++) {
 			// Generate panes
@@ -1820,6 +1824,16 @@ var DobyGrid = function (options) {
 				(self.options.frozenColumns > -1 && i % 2 === 0 ? ' ' + CLS.autoheight : ''),
 				'"></div>'
 			].join('')).appendTo($p);
+
+			// Create gutters.
+			if (self.options.showGutters) {
+				var gutter = '<div class="' + CLS.gutter + '"></div>';
+				var $gutterLeft = $(gutter).addClass('left').appendTo($v);
+				var $gutterRight = $(gutter).addClass('right').appendTo($v);
+				$gutters = $gutters
+					.add($gutterLeft)
+					.add($gutterRight);
+			}
 
 			// Generate canvas
 			// The tabindex here ensures we can focus on this element
@@ -6278,6 +6292,13 @@ var DobyGrid = function (options) {
 					scrollLeftDelta: scrollLeftDelta,
 					scrollTopDelta: scrollTopDelta
 				});
+			}
+
+			// Reposition gutters.
+			if (self.options.showGutters) {
+				$gutters.css('top', scrollTop);
+				$gutters.filter('.left').css('left', scrollLeft);
+				$gutters.filter('.right').css('right', -scrollLeft);
 			}
 		}
 
