@@ -315,6 +315,7 @@ var DobyGrid = function (options) {
 		autoEdit:				true,
 		autoHeight:				false,
 		canvasFocus:			true,
+		cacheNodes:				false,
 		"class":				null,
 		clipboard:				"csv",
 		collapsible:			true,
@@ -874,7 +875,12 @@ var DobyGrid = function (options) {
 				if (this.col.cache && cache && cache.rows[this.row]) {
 					var row_id = cache.rows[this.row][self.options.idProperty];
 					if (!cache.postprocess[row_id]) cache.postprocess[row_id] = {};
-					cache.postprocess[row_id][this.col.id] = $(this.node).html();
+					// cache the dom nodes or html as string?
+					if (self.options.cacheNodes) {
+						cache.postprocess[row_id][this.col.id] = $(this.node).children();
+					} else {
+						cache.postprocess[row_id][this.col.id] = $(this.node).html();
+					}
 				}
 			};
 
@@ -896,8 +902,14 @@ var DobyGrid = function (options) {
 
 				columnIdx = columnIdx || 0;
 
-				var col = cache.activeColumns[columnIdx],
-					postprocess = col.postprocess,
+				var col = cache.activeColumns[columnIdx];
+
+				//if the rowdata has columns, don't take the column from the active columns
+				if (rowdata && rowdata.columns) {
+					col = rowdata.columns[columnIdx];
+				}
+
+				var postprocess = col.postprocess,
 					rd_cols = rowdata.columns;
 
 				// Check to see if a row-specific column override exists
@@ -5586,6 +5598,8 @@ var DobyGrid = function (options) {
 	 * @param	{object}	e		- Javascript event object
 	 */
 	handleClick = function (e) {
+
+
 		var cell = getCellFromEvent(e);
 
 		if ((!cell || cell.row === null || cell.row === undefined) || (
@@ -5732,6 +5746,7 @@ var DobyGrid = function (options) {
 
 			scrollRowIntoView(cell.row, false);
 			setActiveCellInternal(getCellNode(cell.row, cell.cell));
+
 		}
 	};
 
@@ -7723,6 +7738,19 @@ var DobyGrid = function (options) {
 		var cacheEntry = cache.nodes[row], col;
 		if (!cacheEntry) return;
 
+		//search for doby grid viewports and save their scrolling state
+		var vp = cacheEntry.rowNode.find(".doby-grid-pane-top-left .doby-grid-viewport");
+
+		if (vp.length) {
+			vp.each(function (idx, element) {
+				var $element = $(element);
+				$element.data("doby_scrolling", {
+					top: $element.scrollTop(),
+					left: $element.scrollLeft()
+				});
+			});
+		}
+
 		// Remove row from parent element
 		cacheEntry.rowNode[0].parentElement.removeChild(cacheEntry.rowNode[0]);
 
@@ -7739,6 +7767,11 @@ var DobyGrid = function (options) {
 		if (item && cache.postprocess[item[self.options.idProperty]]) {
 			for (var id in cache.postprocess[item[self.options.idProperty]]) {
 				col = cache.activeColumns[cache.columnsById[id]];
+
+				if (item && item.columns) {
+					col = _.findWhere(item.columns, {id: id});
+				}
+
 				// Remove cache if it's non-cached column, or if the column has been hidden or removed
 				if (!col || !col.cache) {
 					delete cache.postprocess[item[self.options.idProperty]][id];
@@ -7812,24 +7845,33 @@ var DobyGrid = function (options) {
 	 *
 	 */
 	renderCell = function (result, row, cell, colspan, item) {
-		var m = cache.activeColumns[cell],
-			mColumns = item && item.columns || {},
-			rowI = Math.min(cache.activeColumns.length - 1, cell + colspan - 1),
+		var m = cache.activeColumns[cell];
+			//p = m;
+
+			if (item && item.columns && item.columns[cell]) {
+				m = item.columns[cell];
+			}
+
+			//mColumns = item && item.columns || {},
+		var rowI = Math.min(cache.activeColumns.length - 1, cell + colspan - 1),
 
 			// Group rows do not inherit column class
-			value = item ? getDataItemValueForColumn(item, m) : null,
+			value = item ? getDataItemValueForColumn(item, cache.activeColumns[cell]) : null,
 			mClass = item._groupRow ? "" : (m.class ? typeof m.class === "function" ? m.class.bind(self)(row, cell, value, m, item) : m.class : null),
 
-			column = cache.activeColumns[cell],
+			column = m,
 			cellCss = [CLS.cell, "l" + cell, "r" + rowI];
 
 		if (mClass) cellCss.push(mClass);
 		if (self.active && row === self.active.row && cell === self.active.cell) cellCss.push("active");
-		if (mColumns[column.id] && mColumns[column.id].class) {
+
+		// don't need this anymore, if we choose the correct column above
+		/*if (mColumns[column.id] && mColumns[column.id].class) {
 			cellCss.push(mColumns[column.id].class);
 		} else if (mColumns[cell] && mColumns[cell].class) {
 			cellCss.push(mColumns[cell].class);
-		}
+		}*/
+
 		if (isCellSelected(row, cell)) cellCss.push(self.options.selectedClass);
 		if (column.selectable === false) cellCss.push(CLS.cellunselectable);
 
@@ -7837,7 +7879,12 @@ var DobyGrid = function (options) {
 
 		// If this is a cached, postprocessed row -- use the cache
 		if (m.cache && m.postprocess && cache.postprocess[item[self.options.idProperty]] && cache.postprocess[item[self.options.idProperty]][column.id]) {
-			result.push(cache.postprocess[item[self.options.idProperty]][column.id]);
+			var cacheValue = cache.postprocess[item[self.options.idProperty]][column.id];
+			if (self.options.cacheNodes && cacheValue instanceof $) {
+				result.push("<div class='cache_placeholder' id='cache_placeholder_" + item[self.options.idProperty] + "' data-column-id='" + column.id + "' data-item-id='" + item[self.options.idProperty] + "'></div>");
+			} else {
+				result.push(cache.postprocess[item[self.options.idProperty]][column.id]);
+			}
 		} else if (item) {
 			// if there is a corresponding row (if not, this is the Add New row or
 			// this data hasn't been loaded yet)
@@ -8140,6 +8187,15 @@ var DobyGrid = function (options) {
 		xLeft.innerHTML = stringArrayL.join("");
 		xRight.innerHTML = stringArrayR.join("");
 
+		var restoreScrolling = function (idx, element) {
+			var $element = $(element);
+			var scrolling = $element.data("doby_scrolling");
+			if (scrolling) {
+				$element.scrollTop(scrolling.top);
+				$element.scrollLeft(scrolling.left);
+			}
+		};
+
 		// Cache the row nodes
 		for (i = 0, ii = rows.length; i < ii; i++) {
 			// If frozen rows are enabled
@@ -8161,6 +8217,19 @@ var DobyGrid = function (options) {
 			} else {
 				cache.nodes[rows[i]].rowNode = $()
 					.add($(xLeft.firstChild).appendTo($canvas[0]));
+			}
+
+			//find and replace cache place holders
+			var cachePlaceHolder = cache.nodes[rows[i]].rowNode.find(".cache_placeholder");
+			//cache.nodes[rows[i]].rowNode.find(".cache_placeholder").css({height: 50, width: 50, background: "red"});
+			if (cachePlaceHolder && cachePlaceHolder.length) {
+				var plId = cachePlaceHolder.data("itemId");
+				var colId = cachePlaceHolder.data("columnId");
+				var cachedNodes = cache.postprocess[plId][colId];
+				cachePlaceHolder.replaceWith(cachedNodes);
+
+				//restore scrolling where applicable
+				cachedNodes.find(".doby-grid-viewport").each(restoreScrolling);
 			}
 		}
 
@@ -8797,6 +8866,15 @@ var DobyGrid = function (options) {
 		// If range is fully excluded already -- don't bother continuing.
 		if (range.fullyExcluded()) return;
 
+		var options = {
+			preventSelection: false,
+			range: range
+		};
+
+		this.trigger('beforeselection', this._event, options);
+
+		if (options.preventSelection) return false;
+
 		// Is this is a single cell range that falls within an existing selection range?
 		if (range.isSingleCell() && this.selection) {
 			for (i = 0, l = this.selection.length; i < l; i++) {
@@ -8869,12 +8947,14 @@ var DobyGrid = function (options) {
 	 */
 	this.selectRows = function (fromRow, toRow, add) {
 		// Select all rows in one batch, so it can be saved as a single selection range
-		this.selectCells(fromRow, 0, toRow, cache.activeColumns.length - 1, add);
+		var goOn = this.selectCells(fromRow, 0, toRow, cache.activeColumns.length - 1, add);
 
-		// Go through all selected rows to add the selected css class
-		for (var i = fromRow; i <= toRow; i++) {
-			var rowNode = cache.nodes[i] ? cache.nodes[i].rowNode : null;
-			if (rowNode) $(rowNode).addClass(this.options.selectedClass);
+		if (goOn !== false){
+			// Go through all selected rows to add the selected css class
+			for (var i = fromRow; i <= toRow; i++) {
+				var rowNode = cache.nodes[i] ? cache.nodes[i].rowNode : null;
+				if (rowNode) $(rowNode).addClass(this.options.selectedClass);
+			}
 		}
 
 		return this;
