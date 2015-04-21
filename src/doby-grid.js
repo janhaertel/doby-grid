@@ -3498,6 +3498,11 @@ var DobyGrid = function (options) {
 				self.selection = cleanranges;
 			}
 		}
+
+		self.trigger('selection', self._event, {
+			selection: self.selection,
+			deselecting: true
+		});
 	};
 
 
