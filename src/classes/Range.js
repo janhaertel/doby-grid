@@ -207,7 +207,7 @@ Range.prototype.isExcludedRow = function (row) {
 		if (this.exclusions[i][0] !== row) continue;
 		excludedColumns.push(this.exclusions[i]);
 	}
-	return (excludedColumns.length == cache.activeColumns.length);
+	return (excludedColumns.length >= cache.activeColumns.length);
 };
 
 

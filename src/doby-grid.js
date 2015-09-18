@@ -150,6 +150,7 @@ var DobyGrid = function (options) {
 		getColumnCssRules,
 		getColumnContentWidth,
 		getColumnHeaderWidth,
+		getColumnHeaderWidths,
 		getColumnFromEvent,
 		getColspan,
 		getDataItemValueForColumn,
@@ -209,6 +210,7 @@ var DobyGrid = function (options) {
 		invalidateRows,
 		isCellPotentiallyEditable,
 		isCellSelected,
+		isRowSelected,
 		isColumnSelected,
 		lastRenderedScrollLeft = 0,
 		lastRenderedScrollTop = 0,
@@ -3461,6 +3463,10 @@ var DobyGrid = function (options) {
 		// Nothing to deselect
 		if (!self.selection) return;
 
+		self.trigger('beforeselection', self._event, {
+			deselecting: true
+		});
+
 		var rowProvided = row !== undefined && row !== null,
 			specific = rowProvided && cell !== undefined && cell !== null;
 
@@ -3515,7 +3521,7 @@ var DobyGrid = function (options) {
 	 * @param	{integer}	rowIndex	- Row index for row to deselect
 	 *
 	 */
-	deselectRow = function (rowIndex) {
+	deselectRow = this.deselectRow = function (rowIndex) {
 		deselectCells(rowIndex);
 		var rowNode = cache.nodes[rowIndex] ? cache.nodes[rowIndex].rowNode : null;
 		if (rowNode) {
@@ -4033,14 +4039,14 @@ var DobyGrid = function (options) {
 	*
 	* @param	{object}	column		- Column object
 	*/
-	fitColumnToHeader = function (column) {
+	fitColumnToHeader = function (column, headerWidths) {
 
 		if (!initialized) return;
 
 		var currentWidth = column.width,
 			column_index = cache.columnsById[column.id];
 
-		column._headerWidth = getColumnHeaderWidth(column_index);
+		column._headerWidth = (headerWidths && headerWidths[column_index]) ? headerWidths[column_index] : getColumnHeaderWidth(column_index);
 
 		var newWidth = Math.max(column.width, column._headerWidth),
 			columnRightPosition;
@@ -4074,8 +4080,9 @@ var DobyGrid = function (options) {
 
 		if (!initialized) return;
 
+		var headerWidths = getColumnHeaderWidths();
 		for (var i = 0, l = cache.activeColumns.length; i < l; i++) {
-			fitColumnToHeader(cache.activeColumns[i]);
+			fitColumnToHeader(cache.activeColumns[i],  headerWidths);
 		}
 
 		applyHeaderAndColumnWidths();
@@ -4145,7 +4152,7 @@ var DobyGrid = function (options) {
 	 * @returns {integer}
 	 */
 	this.getIndex = function (id) {
-		return cache.indexById[id];
+		return cache && cache.indexById[id];
 	};
 
 
@@ -4609,6 +4616,48 @@ var DobyGrid = function (options) {
 		return headerWidth;
 	};
 
+	getColumnHeaderWidths = function () {
+		var headerWidths = [];
+		var currentWidths = [];
+		var $columns = [];
+		var headerPaddings = [];
+		var names = [];
+		var columnElements = $headers.children();
+
+		// 1. read all we need to know from ALL columns
+		for (var i = 0, l = cache.activeColumns.length; i < l; i++) {
+			$columns[i] = $(columnElements[i]);
+			headerPaddings[i] = parseInt($columns[i].css('paddingLeft'), 10) + parseInt($columns[i].css('paddingRight'), 10);
+			currentWidths[i] = $columns[i].width();
+		}
+
+		// 2. set the width for all columns
+		for (i = 0, l = cache.activeColumns.length; i < l; i++) {
+			// Determine the width of the column name text
+			names[i] = $columns[i].children('.' + CLS.columnname + ':first');
+			names[i].css('overflow', 'visible');
+			$columns[i].width('auto');
+		}
+
+		// 3. read the new width from all columns
+		for (i = 0, l = cache.activeColumns.length; i < l; i++) {
+			headerWidths[i] = $columns[i].width() + headerPaddings[i] + 1;
+
+			var column = cache.activeColumns[i];
+			if (hasSorting(column.id)) {
+				var $indicator = $columns[i].find("." + CLS.sortindicator);
+				headerWidths[i] += $indicator.width();
+			}
+		}
+
+		//4. reset everything
+		for (i = 0, l = cache.activeColumns.length; i < l; i++) {
+			names[i].css('overflow', '');
+			$columns[i].width(currentWidths[i]);
+		}
+
+		return headerWidths;
+	};
 
 	/**
 	 * Given an event object, attempts to figure out which column was acted upon
@@ -5606,6 +5655,7 @@ var DobyGrid = function (options) {
 
 
 		var cell = getCellFromEvent(e);
+		var activateCell = true;
 
 		if ((!cell || cell.row === null || cell.row === undefined) || (
 			self.currentEditor !== null &&
@@ -5663,13 +5713,14 @@ var DobyGrid = function (options) {
 				var newestRange = self.selection && self.selection[self.selection.length - 1];
 
 				// Support for "Ctrl" / "Command" clicks
-				if (ctrlUsed && self.active) {
+				if (ctrlUsed) {
 					if (isCellSelected(cell.row)) {
 						deselectRow(cell.row);
 					} else {
 						// Don't select the new row if the shift key is pressed since
 						// it will be selected with the range
 						if (!(shiftUsed)) {
+							activateCell = false;
 							self.selectRows(cell.row, cell.row, true);
 						}
 					}
@@ -5712,10 +5763,11 @@ var DobyGrid = function (options) {
 					}
 				}
 
-				if (!(ctrlUsed || shiftUsed)) {
+				/*if (!(ctrlUsed || shiftUsed)) {
 					deselectCells();
 					self.selectRows(cell.row, cell.row, true);
 				}
+				*/
 
 				clearTextSelection();
 
@@ -5750,7 +5802,7 @@ var DobyGrid = function (options) {
 			}
 
 			scrollRowIntoView(cell.row, false);
-			setActiveCellInternal(getCellNode(cell.row, cell.cell));
+			activateCell && setActiveCellInternal(getCellNode(cell.row, cell.cell));
 
 		}
 	};
@@ -6516,6 +6568,26 @@ var DobyGrid = function (options) {
 		return false;
 	};
 
+	/**
+	 * Returns true if the given row index combination yields a selected cell
+	 * @method isRowSelected
+	 * @memberof DobyGrid
+	 * @private
+	 *
+	 * @param	{integer}	row			- Index of row of the cell
+	 *
+	 * @returns {boolean}
+	 */
+	isRowSelected = function (row) {
+		if (!self.selection) return false;
+		var s;
+		for (var i = 0, l = self.selection.length; i < l; i++) {
+			s = self.selection[i];
+			if (s.contains(row)) return true;
+		}
+		return false;
+	};
+
 
 	/**
 	 * Returns true if all the cells for a given column are selected
@@ -6604,7 +6676,7 @@ var DobyGrid = function (options) {
 	//
 	// @param	row		{integer}		Row index
 	//
-	invalidatePostProcessingResults = function (row) {
+	invalidatePostProcessingResults = this.invalidate =  function (row) {
 		delete cache.postprocess[cache.rows[row][self.options.idProperty]];
 		postProcessFromRow = Math.min(postProcessFromRow, row);
 		postProcessToRow = Math.max(postProcessToRow, row);
@@ -8049,7 +8121,8 @@ var DobyGrid = function (options) {
 		var d = self.getRowFromIndex(row),
 			rowCss = CLS.row +
 				(self.active && row === self.active.row ? " active" : "") +
-				(row % 2 === 1 ? " odd" : ""),
+				(row % 2 === 1 ? " odd" : "") +
+				(isRowSelected(row) ? (" " + self.options.selectedClass) : ""),
 			top, pos = {};
 
 		if (d === undefined) {
@@ -8847,6 +8920,9 @@ var DobyGrid = function (options) {
 			// If no params given - deselect
 			deselectCells();
 
+			this.trigger('selection', this._event, {
+				selection: this.selection
+			});
 			return;
 		} else {
 			var args = ['startRow', 'startCell', 'endRow', 'endCell'],
@@ -8977,6 +9053,11 @@ var DobyGrid = function (options) {
 	 *
 	 */
 	setActiveCellInternal = function (newCell, setEdit) {
+
+		if (!self.active || !self.active.node || self.active.node !== newCell) {
+			self.trigger('beforeactivecellchange', self._event, {});
+		}
+
 		if (self.active && self.active.node !== null) {
 			makeActiveCellNormal();
 			$(self.active.node).removeClass("active");
@@ -9027,7 +9108,10 @@ var DobyGrid = function (options) {
 
 		if (activeCellChanged) {
 			var eventdata = getActiveCell();
-			eventdata.item = self.getRowFromIndex(eventdata.row);
+
+			if (eventdata) {
+				eventdata.item = self.getRowFromIndex(eventdata.row);
+			}
 			self.trigger('activecellchange', self._event, eventdata);
 		}
 	};
