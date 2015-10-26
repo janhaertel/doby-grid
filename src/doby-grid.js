@@ -8,7 +8,6 @@
 
 "use strict";
 
-
 // Support for jQuery.noConflict
 if (!$ && jQuery) $ = jQuery;
 
