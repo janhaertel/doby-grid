@@ -1558,7 +1558,7 @@ var DobyGrid = function (options) {
 			} catch (e) {}
 		} else if (window.getSelection) {
 			var sel = window.getSelection();
-			if (sel && sel.removeAllRanges && sel.getRangeAt(0).getClientRects.length > 0) {
+			if (sel && sel.removeAllRanges && sel.rangeCount > 0 && sel.getRangeAt(0).getClientRects.length > 0) {
 				sel.removeAllRanges();
 			}
 		}
