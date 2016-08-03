@@ -1710,6 +1710,7 @@ var DobyGrid = function (options) {
 		stickyFocus:			false,
 		stickyGroupRows:		false,
 		tooltipType:			"popup",
+		useDobySelect:			true,
 		virtualScroll:			true
 	}, options);
 
@@ -2015,7 +2016,7 @@ var DobyGrid = function (options) {
 			$(document.body).on("click contextmenu", handleBodyClick);
 
 			$canvas
-				.on("keydown", self.options.rowBasedSelection && self.options.handleKeyDownRowBased != false ? handleKeyDownRowBased : handleKeyDown)
+				.on("keydown", self.options.rowBasedSelection && self.options.handleKeyDownRowBased !== false ? handleKeyDownRowBased : handleKeyDown)
 				.on("click", handleClick)
 				.on("dblclick", handleDblClick)
 				.on("contextmenu", handleContextMenu);
@@ -6966,7 +6967,7 @@ var DobyGrid = function (options) {
 		}
 
 		if (self.options.editable && self.currentEditor && self.options.commitCurrentEditOnClick) {
-			var handled = commitCurrentEdit(function (result) {
+			/*var handled = */commitCurrentEdit(function (/*result*/) {
 			});
 		}
 		// If we clicked inside the grid, or in the grid's context menu - do nothing
@@ -7000,7 +7001,7 @@ var DobyGrid = function (options) {
 	handleClick = function (e) {
 
 		if (self.options.editable && self.currentEditor && self.options.commitCurrentEditOnClick) {
-			var handled = commitCurrentEdit(function (result) {
+			/*var handled = */commitCurrentEdit(function (/*result*/) {
 			});
 		}
 
@@ -7113,11 +7114,10 @@ var DobyGrid = function (options) {
 					}
 				}
 
-				/*if (!(ctrlUsed || shiftUsed)) {
+				if (self.options.useDobySelect && !(ctrlUsed || shiftUsed)) {
 					deselectCells();
 					self.selectRows(cell.row, cell.row, true);
 				}
-				*/
 
 				clearTextSelection();
 

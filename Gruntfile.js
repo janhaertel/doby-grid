@@ -110,7 +110,8 @@ module.exports = function (grunt) {
 				banner: banner,
 				mangle: {
 					except: ['jQuery', 'Backbone', 'FileSaver']
-				}
+				},
+				sourceMap: "doby-grid.min.map"
 			},
 
 			build: {
