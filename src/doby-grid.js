@@ -681,7 +681,7 @@ var DobyGrid = function (options) {
 			$(document.body).on("click contextmenu", handleBodyClick);
 
 			$canvas
-				.on("keydown", self.options.rowBasedSelection ? handleKeyDownRowBased : handleKeyDown)
+				.on("keydown", self.options.rowBasedSelection && self.options.handleKeyDownRowBased != false ? handleKeyDownRowBased : handleKeyDown)
 				.on("click", handleClick)
 				.on("dblclick", handleDblClick)
 				.on("contextmenu", handleContextMenu);
@@ -907,7 +907,7 @@ var DobyGrid = function (options) {
 				var col = cache.activeColumns[columnIdx];
 
 				//if the rowdata has columns, don't take the column from the active columns
-				if (rowdata && rowdata.columns) {
+				if (rowdata && rowdata.columns && rowdata.columns[columnIdx]) {
 					col = rowdata.columns[columnIdx];
 				}
 
@@ -1573,7 +1573,7 @@ var DobyGrid = function (options) {
 	 *
 	 * @param	{function}	callback	- Callback function
 	 */
-	commitCurrentEdit = function (callback) {
+	this.commitCurrentEdit = commitCurrentEdit = function (callback) {
 		if (!self.active || !self.currentEditor) return callback(true);
 
 		var item = self.getRowFromIndex(self.active.row),
@@ -2314,7 +2314,7 @@ var DobyGrid = function (options) {
 						predef: gi,
 						sticky: gi.sticky !== null && gi.sticky !== undefined ? gi.sticky : true,
 						value: value,
-						visible: gi.groupNulls === false && value === null ? false : true
+						visible: (gi.groupNulls === false && value === null) || (gi.groupEmpty === false && value === "") ? false : true
 					});
 
 					// Assign id property
@@ -3032,6 +3032,8 @@ var DobyGrid = function (options) {
 			var countBefore = cache.rows.length,
 				diff;
 
+			grid.trigger("beforeDobyRefresh");
+
 			// Recalculate changed rows
 			recalc(this.items, function (result) {
 				diff = result;
@@ -3063,6 +3065,8 @@ var DobyGrid = function (options) {
 			if (initialized && grid.options.autoHeight) {
 				grid.resize();
 			}
+
+			grid.trigger("dobyRefresh");
 		};
 
 
@@ -3725,7 +3729,7 @@ var DobyGrid = function (options) {
 
 				// Use custom column comparator if it exists
 				if (typeof(column.comparator) === 'function') {
-					val = column.comparator(value1, value2) * sign;
+					val = column.comparator(value1, value2, dataRow1, dataRow2) * sign;
 					if (val !== 0) return val;
 				} else {
 					if (self.options.keepNullsAtBottom) {
@@ -5623,6 +5627,14 @@ var DobyGrid = function (options) {
 	 */
 	handleBodyClick = function (e) {
 
+		if ($(e.target).hasClass('doNotCommitCurrentDobyGridEdit')) {
+			return;
+		}
+
+		if (self.options.editable && self.currentEditor && self.options.commitCurrentEditOnClick) {
+			var handled = commitCurrentEdit(function (result) {
+			});
+		}
 		// If we clicked inside the grid, or in the grid's context menu - do nothing
 		if (
 			self.options.stickyFocus ||
@@ -5653,6 +5665,10 @@ var DobyGrid = function (options) {
 	 */
 	handleClick = function (e) {
 
+		if (self.options.editable && self.currentEditor && self.options.commitCurrentEditOnClick) {
+			var handled = commitCurrentEdit(function (result) {
+			});
+		}
 
 		var cell = getCellFromEvent(e);
 		var activateCell = true;
@@ -6103,116 +6119,125 @@ var DobyGrid = function (options) {
 
 			this._event = event;
 
-			switch (event.which) {
-			// Down arrow
-			case 40 :
-				handled = handleNavigateKey(function () {
+			if (!event.altKey) {
 
-					// don't naviagte in cycle mode if shift is used
-					if (shiftUsed && self.options.cycleRowBasedSelection && (newestRange.toRow >= getDataLength() - 1)) {
-						return true;
-					}
+				switch (event.which) {
+					// Down arrow
+					case 40 :
+						handled = handleNavigateKey(function () {
 
-					navigate("down");
-					reselectRow();
-					return true;
-				});
-				break;
-			// Up Arrow
-			case 38 :
-				handled = handleNavigateKey(function () {
+							// don't naviagte in cycle mode if shift is used
+							if (shiftUsed && self.options.cycleRowBasedSelection && (newestRange.toRow >= getDataLength() - 1)) {
+								return true;
+							}
 
-					// don't naviagte in cycle mode if shift is used
-					if (shiftUsed && self.options.cycleRowBasedSelection && (newestRange.fromRow <= 0)) {
-						return true;
-					}
-
-					navigate("up");
-					reselectRow(true);
-					return true;
-				});
-				break;
-			// TAB
-			case 9 :
-				handled = handleNavigateKey(function () {
-					if (shiftUsed) {
-						shiftUsed = false;
-						navigate("up");
-						reselectRow(true);
-					} else {
-						navigate("down");
-						reselectRow();
-					}
-					return true;
-				});
-				break;
-			case 13 :
-				if (self.options.editable && self.currentEditor) {
-					handled = commitCurrentEdit(function (result) {
-						if (result) {
 							navigate("down");
 							reselectRow();
-						}
-					});
-				}
-				break;
-			// Left arrow
-			case 37 :
-				if (!self.options.editable || !self.currentEditor) {
-					handled = handleNavigateKey(function () {
-						return navigate("left");
-					});
-				}
-				break;
-			// Right Arrow
-			case 39 :
-				if (!self.options.editable || !self.currentEditor) {
-					handled = handleNavigateKey(function () {
-						return navigate("right");
-					});
-				}
-				break;
-			// Page Down
-			case 34 :
-				scrollPage(1);
-				handled = true;
-				break;
-			// Page Up
-			case 33 :
-				scrollPage(-1);
-				handled = true;
-				break;
-			// Home
-			case 36 :
-				if (!self.options.editable || !self.currentEditor) {
-					self.scrollToRow(0);
-					handled = true;
-				}
-				break;
-			// END
-			case 35 :
-				if (!self.options.editable || !self.currentEditor) {
-					self.scrollToRow(self.collection.items.length - 1);
-					handled = true;
-				}
-				break;
-			// ESC
-			case 27 :
-				if (self.options.editable && self.currentEditor) {
-					self.currentEditor.cancel();
-					makeActiveCellNormal();
+							return true;
+						});
+						break;
+					// Up Arrow
+					case 38 :
+						handled = handleNavigateKey(function () {
 
-					// Return focus back to the canvas
-					$canvas.focus();
-					handled = true;
-				} else if (self.selection) {
-					// If something is selected remove the selection range
-					deselectCells();
-				} else if (self.active) {
-					// If something is active - remove the active state
-					self.activate();
+							// don't naviagte in cycle mode if shift is used
+							if (shiftUsed && self.options.cycleRowBasedSelection && (newestRange.fromRow <= 0)) {
+								return true;
+							}
+
+							navigate("up");
+							reselectRow(true);
+							return true;
+						});
+						break;
+					// TAB
+					case 9 :
+						handled = handleNavigateKey(function () {
+							if (shiftUsed) {
+								shiftUsed = false;
+								navigate("up");
+								reselectRow(true);
+							} else {
+								navigate("down");
+								reselectRow();
+							}
+							return true;
+						});
+						break;
+					case 13 :
+						if (self.options.editable && self.currentEditor) {
+							handled = commitCurrentEdit(function (result) {
+								if (result) {
+									navigate("down");
+									reselectRow();
+								}
+							});
+						}
+						break;
+					// Left arrow
+					case 37 :
+						if (!self.options.editable || !self.currentEditor) {
+							handled = handleNavigateKey(function () {
+								return navigate("left");
+							});
+						}
+						break;
+					// Right Arrow
+					case 39 :
+						if (!self.options.editable || !self.currentEditor) {
+							handled = handleNavigateKey(function () {
+								return navigate("right");
+							});
+						}
+						break;
+					// Page Down
+					case 34 :
+						scrollPage(1);
+						handled = true;
+						break;
+					// Page Up
+					case 33 :
+						scrollPage(-1);
+						handled = true;
+						break;
+					// Home
+					case 36 :
+						if (!self.options.editable || !self.currentEditor) {
+							self.scrollToRow(0);
+							handled = true;
+						}
+						break;
+					// END
+					case 35 :
+						if (!self.options.editable || !self.currentEditor) {
+							self.scrollToRow(self.collection.items.length - 1);
+							handled = true;
+						}
+						break;
+					// ESC
+					case 27 :
+						if (self.options.editable && self.currentEditor) {
+							self.currentEditor.cancel();
+							makeActiveCellNormal();
+
+							// Return focus back to the canvas
+							$canvas.focus();
+							handled = true;
+						} else if (self.selection) {
+							// If something is selected remove the selection range
+							deselectCells();
+						} else if (self.active) {
+							// If something is active - remove the active state
+							self.activate();
+						}
+						break;
+					// DEL
+					case 46:
+
+						if (!self.active) {
+							self.trigger('keydown', event);
+						}
 				}
-				break;
 			}
 
 			this._event = null;
@@ -6534,8 +6559,10 @@ var DobyGrid = function (options) {
 		// Is this cell editable?
 		if (item.editable === false) return false;
 
-		// Is this column editable?
-		if (cache.activeColumns[cell].editable === false) return false;
+		// Is this column editable? or maybe just this cell ?
+		if (cache.activeColumns[cell].editable === false && (item.columns === undefined || item.columns[cache.activeColumns[cell].field] === undefined || item.columns[cache.activeColumns[cell].field].editable !== true)) {
+			return false;
+		}
 
 		// Is the data for this row loaded?
 		if (row < dataLength && !item) return false;
@@ -7889,7 +7916,9 @@ var DobyGrid = function (options) {
 		}
 
 		// Render missing rows
+		self.trigger("beforeRenderRows");
 		renderRows(rendered);
+		self.trigger("renderRows");
 
 		// Post process rows
 		postProcessFromRow = visible.top;
@@ -8138,8 +8167,8 @@ var DobyGrid = function (options) {
 
 		if (d && d.class) rowCss += " " + (typeof d.class === 'function' ? d.class.bind(self)(row, d) : d.class);
 
-		var rowHtml = ["<div class='", rowCss, "' style='top:", top, "px"];
-
+		var rowStyle = (self.options && self.options.rowStyle) ? (typeof self.options.rowStyle === 'function') ? self.options.rowStyle(d) : self.options.rowStyle : "";
+		var rowHtml = ["<div class='", rowCss, "' style='" + rowStyle + "top:", top, "px"];
 		// In variable row height mode we need some fancy ways to determine height
 		if (variableRowHeight && pos.height !== null && pos.height !== undefined) {
 			var rowheight = pos.height - cellHeightDiff;
@@ -10023,7 +10052,7 @@ var DobyGrid = function (options) {
 			group,
 			offset = $viewport.eq(0).position().top,
 			isFirstGroupCollapsed = i && stickyGroups[0].collapsed ? true : false,
-			isFirstGroupEmptyNull = i && stickyGroups[0].value === null && !stickyGroups[0].predef.groupNulls;
+			isFirstGroupEmptyNull = i && (stickyGroups[0].value === null && !stickyGroups[0].predef.groupNulls) || (stickyGroups[0].value === "" && !stickyGroups[0].predef.groupEmpty);
 
 		// Reset currently rendered groups
 		if (scrollTop === 0 || isFirstGroupCollapsed || isFirstGroupEmptyNull || haveStickyGroupsChanged) {
@@ -10807,7 +10836,7 @@ var DobyGrid = function (options) {
 	 * @param	{integer}	row			- Index of the row to re-render
 	 *
 	 */
-	updateRow = function (row) {
+	this.updateRow = updateRow = function (row) {
 		var cacheEntry = cache.nodes[row];
 		if (!cacheEntry) return;
 
