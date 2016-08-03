@@ -2,3 +2,7 @@
 docs
 libs
 node_modules
+src/doby-grid.min.map
+doby-grid.min.map
+build-doby-grid.bat
+build-doby-grid-fast.bat
