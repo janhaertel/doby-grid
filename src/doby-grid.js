@@ -343,8 +343,9 @@ var DobyGrid = function (options) {
 		frozenRows:				-1,
 		fullWidthRows:			true,
 		groupable:				true,
+		handleClickOnBodyClick: false,
 		idProperty:				"id",
-			infinitePageSize:		35,
+		infinitePageSize:		35,
 		keepNullsAtBottom:		true,
 		keyboardNavigation:		true,
 		lineHeightOffset:		-1,
@@ -368,12 +369,13 @@ var DobyGrid = function (options) {
 		scrollLoader:			null,
 		selectable:				true,
 		selectedClass:			"selected",
-			selectOnNavigate:		false,
+		selectOnNavigate:		false,
 		shiftSelect:			true,
 		showGutters:			false,
 		showHeader:				true,
-			showSortIndicator:		true,
+		showSortIndicator:		true,
 		stickyFocus:			false,
+		stickySelection:		false,
 		stickyGroupRows:		false,
 		tooltipType:			"popup",
 		useDobySelect:			true,
@@ -1473,7 +1475,7 @@ var DobyGrid = function (options) {
 			while ((columnIdx = cacheEntry.cellRenderQueue.pop()) !== null && columnIdx !== undefined) {
 				node = x.lastChild;
 				cacheEntry.rowNode[0].appendChild(node);
-				cacheEntry.cellNodesByColumnIdx[columnIdx] = node;
+				cacheEntry.cellNodesByColumnIdx[columnIdx] = $(node);
 			}
 		}
 	};
@@ -1635,10 +1637,30 @@ var DobyGrid = function (options) {
 			self.currentEditor.focus();
 		};
 
+		var updateRows = function (cellsToEdit) {
+
+			for (var i = 0, l = cellsToEdit.length; i < l; i++) {
+				updateRow(cellsToEdit[i].row);
+
+				self.trigger('change', self._event, {
+					row: cellsToEdit[i].row,
+					cell: cellsToEdit[i].cell,
+					item: cellsToEdit[i].item
+				});
+			}
+		};
+
+
 		if (!self.currentEditor.isValueChanged()) {
-			// No changes made
+
+			//  otris addition
+			self.trigger('editorCommitCurrentEditValueUnchanged', self._event, getCellsToEdit());
+			//  otris addition
+
+			// no changes made
 			callback(true);
 		} else {
+
 			var cellsToEdit = getCellsToEdit();
 
 			// Run validation on all the affected cells
@@ -1675,6 +1697,16 @@ var DobyGrid = function (options) {
 						// Add item to data
 						self.add(newItem);
 
+						//  otris addition
+						self.trigger('editorCommitCurrentEditAfterApplyValue', self._event, [{
+							item: newItem,
+							column: column,
+							row: self.active.row,
+							cell: self.active.cell,
+							$cell: $(getCellNode(self.active.row, self.active.cell))
+						}]);
+						//  otris addition
+
 						self.trigger('newrow', self._event, {
 							cell: self.active.cell,
 							column: column,
@@ -1686,16 +1718,11 @@ var DobyGrid = function (options) {
 						// Execute the operation
 						self.currentEditor.applyValue(cellsToEdit, self.currentEditor.serializeValue());
 
-						// Update rows
-						for (var i = 0, l = cellsToEdit.length; i < l; i++) {
-							updateRow(cellsToEdit[i].row);
+						//  otris addition
+						self.trigger('editorCommitCurrentEditAfterApplyValue', self._event, cellsToEdit);
+						//  otris addition
 
-							self.trigger('change', self._event, {
-								row: cellsToEdit[i].row,
-								cell: cellsToEdit[i].cell,
-								item: cellsToEdit[i].item
-							});
-						}
+						updateRows(cellsToEdit);
 					}
 
 					// If we're using aggregators - update them now.
@@ -2107,7 +2134,9 @@ var DobyGrid = function (options) {
 
 				// Reduce the refresh loop. This greatly improves the performance of large datasets,
 				// especially when using Backbone.Collection which calls add() very often.
-				if (at) refreshHints.ignoreDiffsAfter = at + toAdd.length;
+				if (at && !this.groups) {
+					refreshHints.ignoreDiffsAfter = at + toAdd.length;
+				}
 
 				// Call bounced refresh to ensure successive add() commands don't cause
 				// too many refreshes
@@ -2148,6 +2177,7 @@ var DobyGrid = function (options) {
 			} else {
 				expandCollapseGroup(args.length - 1, args.join(groupingDelimiter), true);
 			}
+			grid.trigger("collapseGroup");
 		};
 
 
@@ -2222,6 +2252,8 @@ var DobyGrid = function (options) {
 			} else {
 				expandCollapseGroup(args.length - 1, args.join(groupingDelimiter), false);
 			}
+
+			grid.trigger("expandGroup");
 		};
 
 
@@ -2313,6 +2345,7 @@ var DobyGrid = function (options) {
 						level: level,
 						parentGroup: (parentGroup ? parentGroup : null),
 						predef: gi,
+						resizable: gi.resizable,
 						sticky: gi.sticky !== null && gi.sticky !== undefined ? gi.sticky : true,
 						value: value,
 						visible: (gi.groupNulls === false && value === null) || (gi.groupEmpty === false && value === "") ? false : true
@@ -3033,7 +3066,6 @@ var DobyGrid = function (options) {
 			var countBefore = cache.rows.length,
 				diff;
 
-			grid.trigger("beforeDobyRefresh");
 
 			// Recalculate changed rows
 			recalc(this.items, function (result) {
@@ -3067,7 +3099,6 @@ var DobyGrid = function (options) {
 				grid.resize();
 			}
 
-			grid.trigger("dobyRefresh");
 		};
 
 
@@ -3107,6 +3138,7 @@ var DobyGrid = function (options) {
 			delete cache.indexById[id];
 			delete cache.rowPositions[idx];
 			delete cache.modelsById[id];
+			cache.rows.splice(idx, 1);	//	otris addition
 
 			// Recache positions from affected row
 			cacheRows(idx);
@@ -3283,7 +3315,10 @@ var DobyGrid = function (options) {
 		 *
 		 * @returns {object}
 		 */
-		this.setItem = function (id, data) {
+		this.setItem = function (id, data, options) {
+
+			options = options || {};
+
 			// Get the index of this item
 			var idx = cache.indexById[id],
 				original_object = this.get(id);
@@ -3362,7 +3397,11 @@ var DobyGrid = function (options) {
 
 			// This needs to be debounced for when it's called via Backbone Events (when many
 			// collection items are changed all at once)
-			this.refreshDebounced();
+			if (options.forced) {
+				this.refresh();
+			} else {
+				this.refreshDebounced();
+			}
 		};
 
 
@@ -3649,8 +3688,8 @@ var DobyGrid = function (options) {
 	 *
 	 * @param	{function}	editor		- Editor factory to use
 	 */
-	this.editActiveCell = function (editor) {
-		makeActiveCellEditable(editor);
+	this.editActiveCell = function (editor, options) {
+		makeActiveCellEditable(editor, options);
 	};
 
 	/**
@@ -5628,23 +5667,39 @@ var DobyGrid = function (options) {
 	 */
 	handleBodyClick = function (e) {
 
+		//  otris addition
 		if ($(e.target).hasClass('doNotCommitCurrentDobyGridEdit')) {
 			return;
 		}
+		//  otris addition
 
-		if (self.options.editable && self.currentEditor && self.options.commitCurrentEditOnClick) {
-			/*var handled = */commitCurrentEdit(function (/*result*/) {
-			});
-		}
-		// If we clicked inside the grid, or in the grid's context menu - do nothing
-		if (
-			self.options.stickyFocus ||
-			$(e.target).closest(self.$el).length > 0 ||
-			(self.dropdown && $(e.target).closest(self.dropdown.$el).length > 0) ||
+
+		// If we clicked inside the grid call handle click and return
+		if ($(e.target).closest(self.$el).length > 0) {
+
+			/*
+			 * cause handle click because handle body click was called on body only, this will ensure editors being instaniated if the focus was
+			 * outside the window
+			 */
+			self.options.handleClickOnBodyClick && handleClick(e);	//  otris addition
+			return;
+		} else if (self.options.stickyFocus || (self.dropdown && $(e.target).closest(self.dropdown.$el).length > 0) ||
 			// Sometimes clicking on inner cell elements results in clicking on orphans
 			$(e.target).parent().length === 0
-		) {
+
+		) {	//	If we clicked in the grid's context menu - do nothing
 			return;
+
+		} else {
+
+			//  otris addition
+			if (self.options.editable && self.currentEditor && self.options.commitCurrentEditOnClick) {
+				self._event = e;
+				/*var handled = */commitCurrentEdit(function (/*result*/) {
+				});
+				self._event = null;
+			}
+			//  otris addition
 		}
 
 		// Was the grid destroyed by the time we go in here?
@@ -5652,7 +5707,10 @@ var DobyGrid = function (options) {
 
 		// If the stickyFocus is disabled - remove any active cells
 		self.activate(null);
-		deselectCells();
+
+		if (!self.options.stickySelection) {
+			deselectCells();
+		}
 	},
 
 
@@ -5666,13 +5724,27 @@ var DobyGrid = function (options) {
 	 */
 	handleClick = function (e) {
 
-		if (self.options.editable && self.currentEditor && self.options.commitCurrentEditOnClick) {
-			/*var handled = */commitCurrentEdit(function (/*result*/) {
-			});
-		}
-
 		var cell = getCellFromEvent(e);
 		var activateCell = true;
+
+
+		//  otris addition, do not commit if clicked inside same editor
+		if (self.options.editable && self.currentEditor && self.options.commitCurrentEditOnClick && (self.currentEditor.$input === undefined || (self.currentEditor.$input.closest('.doby-grid-cell')[0] !== $(e.target).closest(".doby-grid-cell")[0]))) {
+
+			self._event = e;	//  otris addition
+			/*var handled = */commitCurrentEdit(function (/*result*/) {
+
+				//	remove activation if not clicked on a row or a different cell
+				if (cell === null || (self.active && self.active.cell !== cell)) {
+
+					//	reset activation
+					self.activate(null);
+				}
+			});
+			self._event = null;
+		}
+		//  otris addition
+
 
 		if ((!cell || cell.row === null || cell.row === undefined) || (
 			self.currentEditor !== null &&
@@ -5865,12 +5937,22 @@ var DobyGrid = function (options) {
 	 * @param	{object}	e		- Javascript event object
 	 */
 	handleDblClick = function (e) {
-		var cell = getCellFromEvent(e);
+
+		var cell = getCellFromEvent(e),
+			column = getColumnFromEvent(e);
+
+		//	otris addition
+		self.trigger("gridDblClick", e, {
+			cell: (cell && cell.cell !== null && cell.cell !== undefined) ? cell.cell : null,
+			column: column,
+			item: cell && self.getRowFromIndex(cell.row),
+			row: (cell && cell.row !== null && cell.row !== undefined) ? cell.row : null
+		});
+		//	otris addition
+
 		if (!cell || (self.currentEditor !== null && (self.active && self.active.row == cell.row && self.active.cell == cell.cell))) {
 			return;
 		}
-
-		var column = getColumnFromEvent(e);
 
 		self.trigger('dblclick', e, {
 			cell: cell.cell !== null && cell.cell !== undefined ? cell.cell : null,
@@ -5942,6 +6024,7 @@ var DobyGrid = function (options) {
 		var handled = e.isImmediatePropagationStopped();
 
 		this._event = e;
+		self._event = e;
 
 		if (!handled) {
 			// Ctrl/Command + C
@@ -6050,6 +6133,7 @@ var DobyGrid = function (options) {
 		}
 
 		this._event = null;
+		self._event = null;
 
 		if (handled) {
 			// the event has been handled so don't let parent element
@@ -6119,7 +6203,7 @@ var DobyGrid = function (options) {
 
 			this._event = event;
 
-			if (!event.altKey) {
+			if (!handled && !event.altKey) {
 
 				switch (event.which) {
 					// Down arrow
@@ -6770,7 +6854,7 @@ var DobyGrid = function (options) {
 			self.collection.add(model, options);
 		});
 
-		self.listenTo(self.options.data, 'change', function (model) {
+		self.listenTo(self.options.data, 'change', function (model, options) {
 			// If grid is destroyed by the time we get here - leave
 			if (self.destroyed) return;
 
@@ -6778,9 +6862,9 @@ var DobyGrid = function (options) {
 			if (model.changed && model.changed[self.options.idProperty]) {
 				// If trying to edit the idProperty field -- capture that and send it to
 				// the setItem function for proper error handling
-				self.setItem(model._previousAttributes[self.options.idProperty], model);
+				self.setItem(model._previousAttributes[self.options.idProperty], model, options);
 			} else {
-				self.setItem(model[self.options.idProperty], model);
+				self.setItem(model[self.options.idProperty], model, options);
 			}
 		});
 
@@ -6837,7 +6921,8 @@ var DobyGrid = function (options) {
 	 *
 	 * @param	{function}	editor		- Editor factory to use
 	 */
-	makeActiveCellEditable = function (editor) {
+	makeActiveCellEditable = function (editor, options) {
+
 		if (!self.active || !self.active.node || self.options.editable !== true) return;
 
 		// Is this cell editable?
@@ -6848,6 +6933,15 @@ var DobyGrid = function (options) {
 
 		var columnDef = cache.activeColumns[self.active.cell];
 		var item = self.getRowFromIndex(self.active.row);
+
+		//  otris addition
+		self.trigger("editorBeforeInitialize", {
+				grid: self,
+				cell: self.active.node,
+				column: columnDef,
+				item: item || {}
+		});
+		//  otris addition
 
 		$(self.active.node).addClass("editable");
 
@@ -6867,7 +6961,8 @@ var DobyGrid = function (options) {
 				if (self.options.autoEdit) {
 					navigate('down');
 				}
-			}
+			},
+			editorOptions: options
 		});
 
 		// Validate editor for required methods
@@ -8168,6 +8263,13 @@ var DobyGrid = function (options) {
 		if (d && d.class) rowCss += " " + (typeof d.class === 'function' ? d.class.bind(self)(row, d) : d.class);
 
 		var rowStyle = (self.options && self.options.rowStyle) ? (typeof self.options.rowStyle === 'function') ? self.options.rowStyle(d) : self.options.rowStyle : "";
+		rowStyle = rowStyle || "";
+
+		//	ensure semicolon at end of style
+		if (rowStyle && rowStyle[rowStyle.length - 1] !== ";") {
+			rowStyle += ";";
+		}
+
 		var rowHtml = ["<div class='", rowCss, "' style='" + rowStyle + "top:", top, "px"];
 		// In variable row height mode we need some fancy ways to determine height
 		if (variableRowHeight && pos.height !== null && pos.height !== undefined) {
@@ -9283,8 +9385,8 @@ var DobyGrid = function (options) {
 	 *
 	 * @returns {object}
 	 */
-	this.setItem = function (item_id, attributes) {
-		this.collection.setItem(item_id, attributes);
+	this.setItem = function (item_id, attributes, options) {
+		this.collection.setItem(item_id, attributes, options);
 		return this;
 	};
 

@@ -74,6 +74,10 @@ describe("Events", function () {
 
 			// Subscribe to event
 			grid.on('change', function (event, args) {
+				
+				//	test expects wrong element because event was never defined correctly
+				event = null;
+				
 				callback(event, args, {
 					cell: 1,
 					row: 1,
@@ -419,6 +423,10 @@ describe("Events", function () {
 
 			// Subscribe to event
 			grid.on('newrow', function (event, args) {
+				
+				//	test expects wrong element because event was never defined correctly
+				event = null;
+				
 				callback(event, args, {
 					cell: 0,
 					row: 2,
@@ -515,6 +523,10 @@ describe("Events", function () {
 
 			// Subscribe to event
 			grid.on('validationerror', function (event, args) {
+				
+				//	test expects wrong element because event was never defined correctly
+				event = null;
+				
 				callback(event, args, {
 					editor: grid.currentEditor,
 					cellNode: $addRowCell[0],
